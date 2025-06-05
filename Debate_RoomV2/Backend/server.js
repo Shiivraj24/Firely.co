@@ -13,6 +13,9 @@ const TEMPLATE_ID = process.env.TEMPLATE_ID;
 const ACCESS_KEY = process.env.APP_ACCESS_KEY;
 const APP_SECRET = process.env.APP_SECRET;
 
+// Cache the last created room so we don't create a new one for every request
+let currentRoom = null;
+
 console.log('[ENV] MANAGEMENT_API_TOKEN:', MANAGEMENT_API_TOKEN ? '✅ Loaded' : '❌ Missing');
 console.log('[ENV] TEMPLATE_ID:', TEMPLATE_ID ? '✅ Loaded' : '❌ Missing');
 console.log('[ENV] ACCESS_KEY:', ACCESS_KEY ? '✅ Loaded' : '❌ Missing');
@@ -37,8 +40,8 @@ async function createRoom() {
     }
   );
   console.log('✅ Room created:', response.data);
-
-  return response.data;
+  currentRoom = response.data;
+  return currentRoom;
 }
 function generateToken(userId, roomId ) {
   const payload = {
@@ -60,7 +63,9 @@ function generateToken(userId, roomId ) {
 
 app.get('/api/get-token', async (req, res) => {
   try {
-    const room = await createRoom();
+    const forceNew = req.query.new === 'true';
+    // Reuse the existing room if available unless a new one is requested
+    const room = (!currentRoom || forceNew) ? await createRoom() : currentRoom;
     const userId = 'user-' + Date.now();
     const token = generateToken(userId, room.id);
     console.log(room)
