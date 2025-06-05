@@ -1,0 +1,76 @@
+// backend_debug_logging.js
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const jwt = require('jsonwebtoken');
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+const MANAGEMENT_API_TOKEN = process.env.MANAGEMENT_TOKEN;
+const TEMPLATE_ID = process.env.TEMPLATE_ID;
+const ACCESS_KEY = process.env.APP_ACCESS_KEY;
+const APP_SECRET = process.env.APP_SECRET;
+
+console.log('[ENV] MANAGEMENT_API_TOKEN:', MANAGEMENT_API_TOKEN ? '✅ Loaded' : '❌ Missing');
+console.log('[ENV] TEMPLATE_ID:', TEMPLATE_ID ? '✅ Loaded' : '❌ Missing');
+console.log('[ENV] ACCESS_KEY:', ACCESS_KEY ? '✅ Loaded' : '❌ Missing');
+console.log('[ENV] APP_SECRET:', APP_SECRET ? '✅ Loaded' : '❌ Missing');
+
+app.use(cors({ origin: 'http://localhost:3000' }));
+
+async function createRoom() {
+  console.log('🔧 Creating room...');
+  const response = await axios.post(
+    'https://api.100ms.live/v2/rooms',
+    {
+      name: 'debate-room-' + Date.now(),
+      description: 'Real-time debate room',
+      template_id: process.env.TEMPLATE_ID,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.MANAGEMENT_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+  console.log('✅ Room created:', response.data);
+
+  return response.data;
+}
+function generateToken(userId, roomId ) {
+  const payload = {
+    access_key: process.env.APP_ACCESS_KEY, 
+    room_id: roomId,
+    user_id: userId,
+    role: "host",
+    type: 'app',
+    version: 2,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 60 * 60,
+     jti: `${userId}-${Date.now()}` 
+  };
+
+  const token = jwt.sign(payload, process.env.APP_SECRET, { algorithm: "HS256" });
+  console.log("Generated JWT:", token);
+  return token;
+}
+
+app.get('/api/get-token', async (req, res) => {
+  try {
+    const room = await createRoom();
+    const userId = 'user-' + Date.now();
+    const token = generateToken(userId, room.id);
+    console.log(room)
+    res.json({ token , roomId: room.id });
+  } catch (err) {
+    console.error('❌ Token generation failed:', err.response?.data || err.message);
+    res.status(400).json({ error: 'Token generation failed', details: err.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+});
