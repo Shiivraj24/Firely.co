@@ -15,6 +15,7 @@ const APP_SECRET = process.env.APP_SECRET;
 
 // Cache the last created room so we don't create a new one for every request
 let currentRoom = null;
+let roomPromise = null; // ensure only one room is created at a time
 // In-memory storage for speaker scores
 const scores = {};
 // Mapping from app roles to 100ms roles
@@ -53,6 +54,24 @@ async function createRoom() {
   currentRoom = response.data;
   return currentRoom;
 }
+
+async function getCurrentRoom(forceNew = false) {
+  if (forceNew) {
+    currentRoom = await createRoom();
+    return currentRoom;
+  }
+  if (currentRoom) {
+    return currentRoom;
+  }
+  if (!roomPromise) {
+    roomPromise = createRoom().then(room => {
+      currentRoom = room;
+      roomPromise = null;
+      return room;
+    });
+  }
+  return roomPromise;
+}
 function generateToken(userId, roomId, appRole = 'audience') {
   const hmsRole = ROLE_MAP[appRole] || 'guest';
   const payload = {
@@ -81,7 +100,7 @@ app.get('/api/get-token', async (req, res) => {
       return res.status(400).json({ error: 'invalid role' });
     }
     // Reuse the existing room if available unless a new one is requested
-    const room = (!currentRoom || forceNew) ? await createRoom() : currentRoom;
+    const room = await getCurrentRoom(forceNew);
     const userId = 'user-' + Date.now();
     const token = generateToken(userId, room.id, appRole);
     console.log(room)
