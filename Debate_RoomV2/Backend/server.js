@@ -17,6 +17,13 @@ const APP_SECRET = process.env.APP_SECRET;
 let currentRoom = null;
 // In-memory storage for speaker scores
 const scores = {};
+// Mapping from app roles to 100ms roles
+const ROLE_MAP = {
+  judge: 'host',
+  speaker: 'host',
+  moderator: 'host',
+  audience: 'guest'
+};
 
 console.log('[ENV] MANAGEMENT_API_TOKEN:', MANAGEMENT_API_TOKEN ? '✅ Loaded' : '❌ Missing');
 console.log('[ENV] TEMPLATE_ID:', TEMPLATE_ID ? '✅ Loaded' : '❌ Missing');
@@ -46,17 +53,19 @@ async function createRoom() {
   currentRoom = response.data;
   return currentRoom;
 }
-function generateToken(userId, roomId, role = 'audience') {
+function generateToken(userId, roomId, appRole = 'audience') {
+  const hmsRole = ROLE_MAP[appRole] || 'guest';
   const payload = {
     access_key: process.env.APP_ACCESS_KEY,
     room_id: roomId,
     user_id: userId,
-    role,
+    role: hmsRole,
+    app_role: appRole,
     type: 'app',
     version: 2,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 60 * 60,
-     jti: `${userId}-${Date.now()}` 
+    jti: `${userId}-${Date.now()}`
   };
 
   const token = jwt.sign(payload, process.env.APP_SECRET, { algorithm: "HS256" });
@@ -67,11 +76,14 @@ function generateToken(userId, roomId, role = 'audience') {
 app.get('/api/get-token', async (req, res) => {
   try {
     const forceNew = req.query.new === 'true';
-    const role = req.query.role || 'audience';
+    const appRole = req.query.role || 'audience';
+    if (!ROLE_MAP[appRole]) {
+      return res.status(400).json({ error: 'invalid role' });
+    }
     // Reuse the existing room if available unless a new one is requested
     const room = (!currentRoom || forceNew) ? await createRoom() : currentRoom;
     const userId = 'user-' + Date.now();
-    const token = generateToken(userId, room.id, role);
+    const token = generateToken(userId, room.id, appRole);
     console.log(room)
     res.json({ token , roomId: room.id });
   } catch (err) {
@@ -86,7 +98,7 @@ app.post('/api/score', (req, res) => {
     const authHeader = req.headers.authorization || '';
     const token = authHeader.replace('Bearer ', '');
     const decoded = jwt.verify(token, process.env.APP_SECRET);
-    if (decoded.role !== 'judge') {
+    if (decoded.app_role !== 'judge') {
       return res.status(403).json({ error: 'Only judges can score' });
     }
 
