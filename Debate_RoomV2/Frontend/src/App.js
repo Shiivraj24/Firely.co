@@ -1,12 +1,14 @@
 // frontend_join_with_room_id.js
 import React, { useEffect, useState ,useRef} from 'react';
-import { HMSRoomProvider, useHMSActions } from '@100mslive/react-sdk';
+import { useHMSActions } from '@100mslive/react-sdk';
+import RoomPage from './RoomPage';
 
 function JoinButton() {
   const hmsActions = useHMSActions();
   const [token, setToken] = useState(null);
   const [roomId, setRoomId] = useState(null);
   const [status, setStatus] = useState("Fetching token...");
+  const [joined, setJoined] = useState(false);
   const fetchedRef = useRef(false);
 
   useEffect(() => {
@@ -45,6 +47,7 @@ const joinRoom = async () => {
     await hmsActions.join({ userName: 'shivraj', authToken: token });
     setStatus("Successfully joined the room!");
     console.log('🚪 Joined room:', roomId);
+    setJoined(true);
   } catch (error) {
     console.error('❌ Join room failed:', error.message, error);
     if (error && error.description) {
@@ -54,6 +57,10 @@ const joinRoom = async () => {
   }
 };
 
+
+  if (joined) {
+    return <RoomPage />;
+  }
 
   return (
     <div>
@@ -65,11 +72,7 @@ const joinRoom = async () => {
 }
 
 function App() {
-  return (
-    <HMSRoomProvider>
-      <JoinButton />
-    </HMSRoomProvider>
-  );
+  return <JoinButton />;
 }
 
 export default App;
