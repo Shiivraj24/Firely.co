@@ -15,6 +15,8 @@ const APP_SECRET = process.env.APP_SECRET;
 
 // Cache the last created room so we don't create a new one for every request
 let currentRoom = null;
+// In-memory storage for speaker scores
+const scores = {};
 
 console.log('[ENV] MANAGEMENT_API_TOKEN:', MANAGEMENT_API_TOKEN ? '✅ Loaded' : '❌ Missing');
 console.log('[ENV] TEMPLATE_ID:', TEMPLATE_ID ? '✅ Loaded' : '❌ Missing');
@@ -22,6 +24,7 @@ console.log('[ENV] ACCESS_KEY:', ACCESS_KEY ? '✅ Loaded' : '❌ Missing');
 console.log('[ENV] APP_SECRET:', APP_SECRET ? '✅ Loaded' : '❌ Missing');
 
 app.use(cors({ origin: 'http://localhost:3000' }));
+app.use(express.json());
 
 async function createRoom() {
   console.log('🔧 Creating room...');
@@ -43,12 +46,12 @@ async function createRoom() {
   currentRoom = response.data;
   return currentRoom;
 }
-function generateToken(userId, roomId ) {
+function generateToken(userId, roomId, role = 'audience') {
   const payload = {
-    access_key: process.env.APP_ACCESS_KEY, 
+    access_key: process.env.APP_ACCESS_KEY,
     room_id: roomId,
     user_id: userId,
-    role: "host",
+    role,
     type: 'app',
     version: 2,
     iat: Math.floor(Date.now() / 1000),
@@ -64,15 +67,42 @@ function generateToken(userId, roomId ) {
 app.get('/api/get-token', async (req, res) => {
   try {
     const forceNew = req.query.new === 'true';
+    const role = req.query.role || 'audience';
     // Reuse the existing room if available unless a new one is requested
     const room = (!currentRoom || forceNew) ? await createRoom() : currentRoom;
     const userId = 'user-' + Date.now();
-    const token = generateToken(userId, room.id);
+    const token = generateToken(userId, room.id, role);
     console.log(room)
     res.json({ token , roomId: room.id });
   } catch (err) {
     console.error('❌ Token generation failed:', err.response?.data || err.message);
     res.status(400).json({ error: 'Token generation failed', details: err.message });
+  }
+});
+
+// Endpoint for judges to submit scores for speakers
+app.post('/api/score', (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, process.env.APP_SECRET);
+    if (decoded.role !== 'judge') {
+      return res.status(403).json({ error: 'Only judges can score' });
+    }
+
+    const { speakerId, score } = req.body;
+    if (!speakerId || typeof score !== 'number') {
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+
+    if (!scores[speakerId]) {
+      scores[speakerId] = [];
+    }
+    scores[speakerId].push(score);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Score submission failed:', err.message);
+    res.status(400).json({ error: 'Score submission failed' });
   }
 });
 
