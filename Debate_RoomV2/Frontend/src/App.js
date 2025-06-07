@@ -1,10 +1,8 @@
 // frontend_join_with_room_id.js
 import React, { useEffect, useState } from 'react';
-import { useHMSActions } from '@100mslive/react-sdk';
-import RoomPage from './RoomPage';
+import PrebuiltRoom from './PrebuiltRoom';
 
 function JoinButton() {
-  const hmsActions = useHMSActions();
   const [token, setToken] = useState(null);
   const [roomId, setRoomId] = useState(null);
   const [status, setStatus] = useState("Fetching token...");
@@ -36,26 +34,15 @@ function JoinButton() {
 
     fetchToken();
   }, [role]);
-const joinRoom = async () => {
+const joinRoom = () => {
   if (!token) return;
-  try {
-    setStatus("Joining room...");
-    await hmsActions.join({ userName: role, authToken: token });
-    setStatus("Successfully joined the room!");
-    console.log('🚪 Joined room:', roomId);
-    setJoined(true);
-  } catch (error) {
-    console.error('❌ Join room failed:', error.message, error);
-    if (error && error.description) {
-      console.error('🔍 Description:', error.description);
-    }
-    setStatus(`Join room failed: ${error.message}`);
-  }
+  setStatus("Joining room...");
+  setJoined(true);
 };
 
 
   if (joined) {
-    return <RoomPage role={role} token={token} />;
+    return <PrebuiltRoom roomId={roomId} token={token} />;
   }
 
   return (
