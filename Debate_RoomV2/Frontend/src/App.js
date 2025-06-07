@@ -1,6 +1,6 @@
 // frontend_join_with_room_id.js
 import React, { useEffect, useState } from 'react';
-import PrebuiltRoom from './PrebuiltRoom';
+import CustomRoom from './CustomRoom';
 
 function JoinButton() {
   const [token, setToken] = useState(null);
@@ -42,7 +42,7 @@ const joinRoom = () => {
 
 
   if (joined) {
-    return <PrebuiltRoom roomId={roomId} token={token} />;
+    return <CustomRoom token={token} />;
   }
 
   return (
