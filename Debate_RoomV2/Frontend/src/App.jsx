@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { HMSPrebuilt } from '@100mslive/roomkit-react';
+import SpeakerTimer from './SpeakerTimer';
 
 function App() {
   const [role, setRole] = useState('audience');
@@ -25,9 +26,12 @@ function App() {
   };
 
   if (token) {
-       return ( <div style={{ height: '100vh' }}>
+    return (
+      <div style={{ position: 'relative', height: '100vh' }}>
         <HMSPrebuilt authToken={token} />
-      </div> );
+        <SpeakerTimer />
+      </div>
+    );
   }
 
   return (
