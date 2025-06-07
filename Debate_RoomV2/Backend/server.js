@@ -20,10 +20,10 @@ let roomPromise = null; // ensure only one room is created at a time
 const scores = {};
 // Mapping from app roles to 100ms roles
 const ROLE_MAP = {
-  judge: 'host',
-  speaker: 'host',
-  moderator: 'host',
-  audience: 'guest'
+  judge: 'judge',
+  speaker: 'speaker',
+  moderator: 'moderator',
+  audience: 'audience'
 };
 
 console.log('[ENV] MANAGEMENT_API_TOKEN:', MANAGEMENT_API_TOKEN ? '✅ Loaded' : '❌ Missing');

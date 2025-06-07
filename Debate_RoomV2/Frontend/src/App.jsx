@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HMSPrebuilt } from '@100mslive/roomkit';
+import { HMSPrebuilt } from '@100mslive/roomkit-react';
 
 function App() {
   const [role, setRole] = useState('audience');
@@ -25,7 +25,9 @@ function App() {
   };
 
   if (token) {
-    return <HMSPrebuilt token={token} />;
+       return ( <div style={{ height: '100vh' }}>
+        <HMSPrebuilt authToken={token} />
+      </div> );
   }
 
   return (
