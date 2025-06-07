@@ -88,7 +88,7 @@ function generateToken(userId, roomId, appRole = 'audience') {
   };
 
   const token = jwt.sign(payload, process.env.APP_SECRET, { algorithm: "HS256" });
-  console.log("Generated JWT:", token);
+  console.log(`[TOKEN] Generated for role "${appRole}" user ${userId} in room ${roomId}`);
   return token;
 }
 
@@ -101,10 +101,10 @@ app.get('/api/get-token', async (req, res) => {
     }
     // Reuse the existing room if available unless a new one is requested
     const room = await getCurrentRoom(forceNew);
+    console.log(`[ROOM] Using room ${room.id}`);
     const userId = 'user-' + Date.now();
     const token = generateToken(userId, room.id, appRole);
-    console.log(room)
-    res.json({ token , roomId: room.id });
+    res.json({ token, roomId: room.id });
   } catch (err) {
     console.error('❌ Token generation failed:', err.response?.data || err.message);
     res.status(400).json({ error: 'Token generation failed', details: err.message });
