@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HMSPrebuilt } from '@100mslive/roomkit-react';
+import CustomRoom from './CustomRoom';
 
 function App() {
   const [role, setRole] = useState('audience');
@@ -25,9 +25,11 @@ function App() {
   };
 
   if (token) {
-       return ( <div style={{ height: '100vh' }}>
-        <HMSPrebuilt authToken={token} />
-      </div> );
+    return (
+      <div style={{ height: '100vh' }}>
+        <CustomRoom token={token} role={role} />
+      </div>
+    );
   }
 
   return (
