@@ -16,8 +16,6 @@ const APP_SECRET = process.env.APP_SECRET;
 // Cache the last created room so we don't create a new one for every request
 let currentRoom = null;
 let roomPromise = null; // ensure only one room is created at a time
-// In-memory storage for speaker scores
-const scores = {};
 // Mapping from app roles to 100ms roles
 const ROLE_MAP = {
   judge: 'judge',
@@ -111,31 +109,6 @@ app.get('/api/get-token', async (req, res) => {
   }
 });
 
-// Endpoint for judges to submit scores for speakers
-app.post('/api/score', (req, res) => {
-  try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.replace('Bearer ', '');
-    const decoded = jwt.verify(token, process.env.APP_SECRET);
-    if (decoded.app_role !== 'judge') {
-      return res.status(403).json({ error: 'Only judges can score' });
-    }
-
-    const { speakerId, score } = req.body;
-    if (!speakerId || typeof score !== 'number') {
-      return res.status(400).json({ error: 'Invalid payload' });
-    }
-
-    if (!scores[speakerId]) {
-      scores[speakerId] = [];
-    }
-    scores[speakerId].push(score);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Score submission failed:', err.message);
-    res.status(400).json({ error: 'Score submission failed' });
-  }
-});
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
