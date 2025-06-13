@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import CustomRoom from './CustomRoom';
+import { HMSRoomProvider } from '@100mslive/react-sdk';
+import CustomRoom from './components/CustomRoom';
 
 function App() {
   const [role, setRole] = useState('audience');
   const [token, setToken] = useState('');
   const [roomId, setRoomId] = useState('');
   const [status, setStatus] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const joinRoom = async () => {
+    setIsLoading(true);
     setStatus('Fetching token...');
     try {
       const resp = await fetch(`http://localhost:3001/api/get-token?role=${role}`);
@@ -21,32 +24,39 @@ function App() {
     } catch (err) {
       console.error('Token fetch failed', err);
       setStatus('Token fetch failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  if (token) {
-    return (
-      <div style={{ height: '100vh' }}>
-        <CustomRoom token={token} role={role} />
-      </div>
-    );
-  }
-
   return (
-    <div style={{ padding: '1rem' }}>
-      <label>
-        Role:
-        <select value={role} onChange={e => setRole(e.target.value)}>
-          <option value="judge">Judge</option>
-          <option value="speaker">Speaker</option>
-          <option value="moderator">Moderator</option>
-          <option value="audience">Audience</option>
-        </select>
-      </label>
-      <button onClick={joinRoom} style={{ marginLeft: '10px' }}>Join Room</button>
-      {roomId && <p>Room: {roomId}</p>}
-      {status && <p>{status}</p>}
-    </div>
+    <HMSRoomProvider>
+      {token ? (
+        <div style={{ height: '100vh' }}>
+          <CustomRoom token={token} role={role} />
+        </div>
+      ) : (
+        <div style={{ padding: '20px' }}>
+          <h1>Join Debate Room</h1>
+          <div>
+            <label>
+              Select your role:
+              <select value={role} onChange={e => setRole(e.target.value)}>
+                <option value="judge">Judge</option>
+                <option value="speaker">Speaker</option>
+                <option value="moderator">Moderator</option>
+                <option value="audience">Audience</option>
+              </select>
+            </label>
+            <button onClick={joinRoom} disabled={isLoading}>
+              {isLoading ? 'Joining...' : 'Join Room'}
+            </button>
+            {status && <p>{status}</p>}
+            {roomId && <p>Room ID: {roomId}</p>}
+          </div>
+        </div>
+      )}
+    </HMSRoomProvider>
   );
 }
 
