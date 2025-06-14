@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   useHMSStore,
   selectPeers,
@@ -12,6 +12,7 @@ import {
   useScreenShare,
   useCustomEvent,
   selectRemotePeers,
+  HMSLogLevel,
 } from '@100mslive/react-sdk';
 import './CustomRoom.css';
 
@@ -29,6 +30,13 @@ function RoomInner({ token, role, userName }) {
   const [activeSpeaker, setActiveSpeaker] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [isJoining, setIsJoining] = useState(false);
+  const joinAttempted = useRef(false);
+
+  // Configure logging
+  useEffect(() => {
+    hmsActions.setLogLevel(HMSLogLevel.ERROR);
+  }, [hmsActions]);
 
   const { sendEvent } = useCustomEvent({
     type: 'ACTIVE_SPEAKER',
@@ -44,53 +52,77 @@ function RoomInner({ token, role, userName }) {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
-    hmsActions.join({ authToken: token, userName });
+    let mounted = true;
 
-    return () => {
-      hmsActions.leave();
-    };
-  }, [token, hmsActions, userName]);
-
-  // Add effect to handle timer pause when active speaker mutes
-  useEffect(() => {
-    if (!activeSpeaker || !localPeer) return;
-
-    const handleAudioStateChange = () => {
-      if (activeSpeaker === localPeer.id && !isLocalAudioEnabled) {
-        // Pause timer when active speaker mutes
-        setTimers(prev => {
-          const newTimers = { ...prev };
-          delete newTimers[activeSpeaker];
-          return newTimers;
-        });
-        setActiveSpeaker(null);
+    const joinRoom = async () => {
+      if (!token || isJoining || isConnected || joinAttempted.current) return;
+      
+      try {
+        setIsJoining(true);
+        joinAttempted.current = true;
+        await hmsActions.join({ authToken: token, userName });
+      } catch (error) {
+        console.error('Error joining room:', error);
+        if (mounted) {
+          joinAttempted.current = false;
+        }
+      } finally {
+        if (mounted) {
+          setIsJoining(false);
+        }
       }
     };
 
+    joinRoom();
+
+    return () => {
+      mounted = false;
+      if (isConnected) {
+        joinAttempted.current = false;
+        hmsActions.leave();
+      }
+    };
+  }, [token, hmsActions, userName, isConnected, isJoining]);
+
+  const handleAudioStateChange = useCallback(() => {
+    if (!activeSpeaker || !localPeer) return;
+    if (activeSpeaker === localPeer.id && !isLocalAudioEnabled) {
+      setTimers(prev => {
+        const newTimers = { ...prev };
+        delete newTimers[activeSpeaker];
+        return newTimers;
+      });
+      setActiveSpeaker(null);
+    }
+  }, [activeSpeaker, localPeer, isLocalAudioEnabled]);
+
+  useEffect(() => {
     handleAudioStateChange();
-  }, [isLocalAudioEnabled, activeSpeaker, localPeer]);
+  }, [handleAudioStateChange]);
 
   const handleAudioToggle = useCallback(async () => {
+    if (!isConnected) return;
     try {
       await hmsActions.setLocalAudioEnabled(!isLocalAudioEnabled);
     } catch (error) {
       console.error('Error toggling audio:', error);
     }
-  }, [hmsActions, isLocalAudioEnabled]);
+  }, [hmsActions, isLocalAudioEnabled, isConnected]);
 
   const handleScreenShare = useCallback(async () => {
+    if (!isConnected) return;
     try {
       await toggleScreenShare();
     } catch (error) {
       console.error('Error toggling screen share:', error);
     }
-  }, [toggleScreenShare]);
+  }, [toggleScreenShare, isConnected]);
 
   const leaveRoom = useCallback(async () => {
+    if (!isConnected) return;
     try {
+      joinAttempted.current = false;
       await hmsActions.leave();
-      // Reset all states
       setChatInput('');
       setTimers({});
       setActiveSpeaker(null);
@@ -98,53 +130,63 @@ function RoomInner({ token, role, userName }) {
     } catch (error) {
       console.error('Error leaving room:', error);
     }
-  }, [hmsActions]);
+  }, [hmsActions, isConnected]);
 
   const handleSendMessage = useCallback(
     e => {
       e.preventDefault();
-      if (chatInput.trim()) {
-        hmsActions.sendBroadcastMessage(chatInput.trim());
-        setChatInput('');
-      }
+      if (!isConnected || !chatInput.trim()) return;
+      hmsActions.sendBroadcastMessage(chatInput.trim());
+      setChatInput('');
     },
-    [chatInput, hmsActions],
+    [chatInput, hmsActions, isConnected],
   );
 
   const startSpeaker = useCallback(
     peerId => {
+      if (!isConnected) return;
       const start = Date.now();
       sendEvent({ peerId, start });
       setActiveSpeaker(peerId);
       setTimers({ [peerId]: start });
     },
-    [sendEvent],
+    [sendEvent, isConnected],
   );
 
-  // determine speaker order and start the first speaker automatically
   useEffect(() => {
+    if (!isConnected || activeSpeaker || !localPeer) return;
+
     const speakerPeers = peers
       .filter(p => p.roleName === 'speaker')
       .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
-    if (!activeSpeaker && speakerPeers.length > 0 && localPeer) {
-      if (localPeer.id === speakerPeers[0].id) {
-        startSpeaker(localPeer.id);
+
+    if (speakerPeers.length > 0 && localPeer.id === speakerPeers[0].id) {
+      startSpeaker(localPeer.id);
+    }
+  }, [peers, activeSpeaker, startSpeaker, localPeer, isConnected]);
+
+  const updateAudioState = useCallback(async () => {
+    if (!isConnected || !localPeer) return;
+    
+    const shouldBeEnabled = activeSpeaker === localPeer.id;
+    if (shouldBeEnabled !== isLocalAudioEnabled) {
+      try {
+        await hmsActions.setLocalAudioEnabled(shouldBeEnabled);
+      } catch (error) {
+        console.error('Error updating audio state:', error);
       }
     }
-  }, [peers, activeSpeaker, startSpeaker, localPeer]);
+  }, [activeSpeaker, hmsActions, localPeer, isConnected, isLocalAudioEnabled]);
 
-  // automatically mute/unmute local peer based on active speaker
   useEffect(() => {
-    if (!localPeer) return;
-    hmsActions.setLocalAudioEnabled(activeSpeaker === localPeer.id);
-  }, [activeSpeaker, hmsActions, localPeer]);
+    updateAudioState();
+  }, [updateAudioState]);
 
-  // timer to switch to next speaker after 2 minutes
   useEffect(() => {
-    if (!activeSpeaker) return;
+    if (!isConnected || !activeSpeaker || !localPeer) return;
+    
     const start = timers[activeSpeaker];
-    if (!start) return;
-    if (activeSpeaker !== localPeer.id) return; // only active speaker's client controls switch
+    if (!start || activeSpeaker !== localPeer.id) return;
 
     const interval = setInterval(() => {
       if (now - start >= 120000) {
@@ -158,8 +200,9 @@ function RoomInner({ token, role, userName }) {
         startSpeaker(nextPeerId);
       }
     }, 1000);
+
     return () => clearInterval(interval);
-  }, [activeSpeaker, timers, peers, startSpeaker, hmsActions, localPeer]);
+  }, [activeSpeaker, timers, peers, startSpeaker, hmsActions, localPeer, isConnected, now]);
 
   const PeerTile = ({ peer, isLocal }) => {
     const { videoRef } = useVideo({
