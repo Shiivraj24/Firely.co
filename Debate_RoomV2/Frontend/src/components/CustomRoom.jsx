@@ -28,6 +28,7 @@ function RoomInner({ token, role, userName }) {
   const [timers, setTimers] = useState({});
   const [activeSpeaker, setActiveSpeaker] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [now, setNow] = useState(Date.now());
 
   const { sendEvent } = useCustomEvent({
     type: 'ACTIVE_SPEAKER',
@@ -38,17 +39,18 @@ function RoomInner({ token, role, userName }) {
   });
 
   useEffect(() => {
-    if (token && !isConnected) {
-      hmsActions.join({ authToken: token });
-    }
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
-    // Cleanup function
+  useEffect(() => {
+    if (!token) return;
+    hmsActions.join({ authToken: token, userName });
+
     return () => {
-      if (isConnected) {
-        hmsActions.leave();
-      }
+      hmsActions.leave();
     };
-  }, [token, isConnected, hmsActions]);
+  }, [token, hmsActions, userName]);
 
   // Add effect to handle timer pause when active speaker mutes
   useEffect(() => {
@@ -145,7 +147,7 @@ function RoomInner({ token, role, userName }) {
     if (activeSpeaker !== localPeer.id) return; // only active speaker's client controls switch
 
     const interval = setInterval(() => {
-      if (Date.now() - start >= 120000) {
+      if (now - start >= 120000) {
         const speakerPeers = peers
           .filter(p => p.roleName === 'speaker')
           .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
@@ -167,7 +169,7 @@ function RoomInner({ token, role, userName }) {
     const start = timers[peer.id];
     let remaining = null;
     if (start) {
-      const diff = Math.max(0, 120 - Math.floor((Date.now() - start) / 1000));
+      const diff = Math.max(0, 120 - Math.floor((now - start) / 1000));
       const mins = String(Math.floor(diff / 60)).padStart(2, '0');
       const secs = String(diff % 60).padStart(2, '0');
       remaining = `${mins}:${secs}`;
@@ -272,6 +274,7 @@ function ScreenShareView({ trackId }) {
   );
 }
 
-export default function CustomRoom({ token, role }) {
-  return <RoomInner token={token} role={role} />;
-} 
+export default function CustomRoom({ token, role, userName }) {
+  return <RoomInner token={token} role={role} userName={userName} />;
+}
+
