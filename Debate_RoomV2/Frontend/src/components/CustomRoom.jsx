@@ -11,13 +11,16 @@ import {
   useAVToggle,
   useScreenShare,
   useCustomEvent,
+  selectRemotePeers,
 } from '@100mslive/react-sdk';
+import './CustomRoom.css';
 
-function RoomInner({ token, role }) {
-  const actions = useHMSActions();
+function RoomInner({ token, role, userName }) {
+  const hmsActions = useHMSActions();
   const isConnected = useHMSStore(selectIsConnectedToRoom);
   const peers = useHMSStore(selectPeers);
   const localPeer = useHMSStore(selectLocalPeer);
+  const remotepeer = useHMSStore(selectRemotePeers);
   const messages = useHMSStore(selectHMSMessages);
   const { isLocalAudioEnabled, isLocalVideoEnabled, toggleAudio, toggleVideo } = useAVToggle();
   const { amIScreenSharing, screenShareVideoTrackId, toggleScreenShare } = useScreenShare();
@@ -36,28 +39,43 @@ function RoomInner({ token, role }) {
 
   useEffect(() => {
     if (token && !isConnected) {
-      actions.join({ authToken: token, userName: role });
+      hmsActions.join({ authToken: token });
     }
 
     // Cleanup function
     return () => {
       if (isConnected) {
-        actions.leave();
+        hmsActions.leave();
       }
     };
-  }, [token, isConnected, actions, role]);
+  }, [token, isConnected, hmsActions]);
 
-  const leaveRoom = useCallback(async () => {
+  // Add effect to handle timer pause when active speaker mutes
+  useEffect(() => {
+    if (!activeSpeaker || !localPeer) return;
+
+    const handleAudioStateChange = () => {
+      if (activeSpeaker === localPeer.id && !isLocalAudioEnabled) {
+        // Pause timer when active speaker mutes
+        setTimers(prev => {
+          const newTimers = { ...prev };
+          delete newTimers[activeSpeaker];
+          return newTimers;
+        });
+        setActiveSpeaker(null);
+      }
+    };
+
+    handleAudioStateChange();
+  }, [isLocalAudioEnabled, activeSpeaker, localPeer]);
+
+  const handleAudioToggle = useCallback(async () => {
     try {
-      await actions.leave();
-      // Reset all states
-      setChatInput('');
-      setTimers({});
-      setIsChatOpen(false);
+      await hmsActions.setLocalAudioEnabled(!isLocalAudioEnabled);
     } catch (error) {
-      console.error('Error leaving room:', error);
+      console.error('Error toggling audio:', error);
     }
-  }, [actions]);
+  }, [hmsActions, isLocalAudioEnabled]);
 
   const handleScreenShare = useCallback(async () => {
     try {
@@ -67,15 +85,28 @@ function RoomInner({ token, role }) {
     }
   }, [toggleScreenShare]);
 
-  const sendChat = useCallback(
+  const leaveRoom = useCallback(async () => {
+    try {
+      await hmsActions.leave();
+      // Reset all states
+      setChatInput('');
+      setTimers({});
+      setActiveSpeaker(null);
+      setIsChatOpen(false);
+    } catch (error) {
+      console.error('Error leaving room:', error);
+    }
+  }, [hmsActions]);
+
+  const handleSendMessage = useCallback(
     e => {
       e.preventDefault();
       if (chatInput.trim()) {
-        actions.sendBroadcastMessage(chatInput.trim());
+        hmsActions.sendBroadcastMessage(chatInput.trim());
         setChatInput('');
       }
     },
-    [chatInput, actions],
+    [chatInput, hmsActions],
   );
 
   const startSpeaker = useCallback(
@@ -103,8 +134,8 @@ function RoomInner({ token, role }) {
   // automatically mute/unmute local peer based on active speaker
   useEffect(() => {
     if (!localPeer) return;
-    actions.setLocalAudioEnabled(activeSpeaker === localPeer.id);
-  }, [activeSpeaker, actions, localPeer]);
+    hmsActions.setLocalAudioEnabled(activeSpeaker === localPeer.id);
+  }, [activeSpeaker, hmsActions, localPeer]);
 
   // timer to switch to next speaker after 2 minutes
   useEffect(() => {
@@ -121,16 +152,18 @@ function RoomInner({ token, role }) {
         const currentIndex = speakerPeers.findIndex(p => p.id === activeSpeaker);
         const nextIndex = (currentIndex + 1) % speakerPeers.length;
         const nextPeerId = speakerPeers[nextIndex].id;
-        actions.setLocalAudioEnabled(false);
+        hmsActions.setLocalAudioEnabled(false);
         startSpeaker(nextPeerId);
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [activeSpeaker, timers, peers, startSpeaker, actions, localPeer]);
+  }, [activeSpeaker, timers, peers, startSpeaker, hmsActions, localPeer]);
 
   const PeerTile = ({ peer, isLocal }) => {
-    const videoTrack = useHMSStore(selectCameraStreamByPeerID(peer.id));
-    const { videoRef } = useVideo({ trackId: videoTrack?.id });
+    const { videoRef } = useVideo({
+      trackId: peer.videoTrack,
+    });
+
     const start = timers[peer.id];
     let remaining = null;
     if (start) {
@@ -140,48 +173,30 @@ function RoomInner({ token, role }) {
       remaining = `${mins}:${secs}`;
     }
 
+    const displayName = isLocal ? userName : peer.name;
+
     return (
-      <div style={{ position: 'relative', width: isLocal ? '160px' : '100%' }}>
-        <div style={{ 
-          width: '100%', 
-          height: isLocal ? '120px' : 'auto',
-          transform: isLocal ? 'scaleX(-1)' : 'none',
-        }}>
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted={isLocal}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-            }}
-          />
+      <div className={`peer-tile ${peer.id === activeSpeaker ? 'active' : ''}`}>
+        <video
+          ref={videoRef}
+          autoPlay
+          muted={isLocal}
+          playsInline
+          className="peer-video"
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            borderRadius: '8px',
+            backgroundColor: '#1a1a1a',
+            transform: 'scaleX(-1)'
+          }}       
+        />
+        <div className="peer-info">
+          <span className="peer-name">{displayName}</span>
+          <span className="peer-role">{peer.roleName}</span>
         </div>
-        <div style={{ 
-          position: 'absolute', 
-          bottom: 0, 
-          left: 0, 
-          right: 0, 
-          background: 'rgba(0,0,0,0.5)', 
-          color: 'white', 
-          padding: '4px',
-        }}>
-          {peer.name} {isLocal ? '(You)' : ''}
-        </div>
-        {remaining && (
-          <div style={{ 
-            position: 'absolute', 
-            top: 4, 
-            right: 4, 
-            background: 'orange', 
-            padding: '2px 4px', 
-            borderRadius: '4px',
-          }}>
-            {remaining}
-          </div>
-        )}
+        {remaining && <div className="peer-timer">{remaining}</div>}
       </div>
     );
   };
@@ -191,49 +206,54 @@ function RoomInner({ token, role }) {
   }
 
   return (
-    <div>
-      <div style={{ padding: '10px', borderBottom: '1px solid #ccc' }}>
-        <h2>Debate Room - {role}</h2>
-        <div>
-          <button onClick={toggleAudio}>{isLocalAudioEnabled ? 'Mute' : 'Unmute'}</button>
-          <button onClick={toggleVideo}>{isLocalVideoEnabled ? 'Hide Video' : 'Show Video'}</button>
-          <button onClick={handleScreenShare}>{amIScreenSharing ? 'Stop Share' : 'Share Screen'}</button>
-          <button onClick={() => setIsChatOpen(!isChatOpen)}>Chat</button>
-          <button onClick={leaveRoom}>Leave Room</button>
-        </div>
+    <div className="room-container">
+      <div className="peers-grid">
+        {peers
+          .filter(peer => !peer.isLocal)
+          .map(peer => (
+            <PeerTile key={peer.id} peer={peer} isLocal={false} />
+          ))}
+        {localPeer && <PeerTile peer={localPeer} isLocal={true} />}
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '10px' }}>
-        {peers.map(peer => (
-          <PeerTile key={peer.id} peer={peer} isLocal={peer.isLocal} />
-        ))}
+      <div className="controls">
+        <button onClick={handleAudioToggle} disabled={!localPeer}>
+          {isLocalAudioEnabled ? 'Mute' : 'Unmute'}
+        </button>
+        <button onClick={toggleVideo} disabled={!localPeer}>
+          {isLocalVideoEnabled ? 'Hide Video' : 'Show Video'}
+        </button>
+        <button onClick={handleScreenShare} disabled={!localPeer}>
+          {amIScreenSharing ? 'Stop Share' : 'Share Screen'}
+        </button>
+        <button onClick={() => setIsChatOpen(!isChatOpen)}>Chat</button>
+        <button onClick={leaveRoom}>Leave Room</button>
       </div>
-
-      {screenShareVideoTrackId && (
-        <div style={{ padding: '10px' }}>
-          <h3>Screen Share</h3>
-          <ScreenShareView trackId={screenShareVideoTrackId} />
-        </div>
-      )}
 
       {isChatOpen && (
-        <div style={{ position: 'fixed', right: '10px', top: '80px', bottom: '10px', width: '300px', background: 'white', border: '1px solid #ccc' }}>
-          <div style={{ height: 'calc(100% - 50px)', overflowY: 'auto', padding: '10px' }}>
-            {messages.map((m, i) => (
-              <div key={i}>
-                <strong>{m.senderName}:</strong> {m.message}
+        <div className="chat-container">
+          <div className="chat-header">
+            <span>Chat</span>
+            <button onClick={() => setIsChatOpen(false)}>×</button>
+          </div>
+          <div className="chat-messages">
+            {messages.map((msg, i) => (
+              <div key={i} className="message">
+                <div className="sender">{msg.senderName}</div>
+                <div className="content">{msg.message}</div>
               </div>
             ))}
           </div>
-          <form onSubmit={sendChat} style={{ padding: '10px', borderTop: '1px solid #ccc' }}>
+          <div className="chat-input">
             <input
+              type="text"
               value={chatInput}
               onChange={e => setChatInput(e.target.value)}
-              placeholder="Type your message..."
-              style={{ width: 'calc(100% - 60px)' }}
+              placeholder="Type a message..."
+              onKeyPress={e => e.key === 'Enter' && handleSendMessage(e)}
             />
-            <button type="submit">Send</button>
-          </form>
+            <button onClick={handleSendMessage}>Send</button>
+          </div>
         </div>
       )}
     </div>

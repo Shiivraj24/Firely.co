@@ -95,6 +95,7 @@ app.get('/api/get-token', async (req, res) => {
   try {
     const forceNew = req.query.new === 'true';
     const appRole = req.query.role || 'audience';
+    
     if (!ROLE_MAP[appRole]) {
       return res.status(400).json({ error: 'invalid role' });
     }
