@@ -207,4 +207,26 @@ video {
   -moz-context-menu: none;
   -ms-context-menu: none;
   context-menu: none;
-} 
+}
+
+.speaking-order {
+  margin-top: 20px;
+  background: white;
+  padding: 10px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.speaking-order ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.speaking-order li {
+  margin-bottom: 4px;
+}
+
+.speaking-order button {
+  margin-left: 4px;
+  padding: 2px 6px;
+}
