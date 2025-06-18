@@ -16,8 +16,6 @@ const APP_SECRET = process.env.APP_SECRET;
 // Cache the last created room so we don't create a new one for every request
 let currentRoom = null;
 let roomPromise = null; // ensure only one room is created at a time
-// In-memory storage for speaker scores
-const scores = {};
 // Mapping from app roles to 100ms roles
 const ROLE_MAP = {
   judge: 'judge',
@@ -74,6 +72,7 @@ async function getCurrentRoom(forceNew = false) {
 }
 function generateToken(userId, roomId, appRole = 'audience') {
   const hmsRole = ROLE_MAP[appRole] || 'guest';
+  const now = Math.floor(Date.now() / 1000);
   const payload = {
     access_key: process.env.APP_ACCESS_KEY,
     room_id: roomId,
@@ -82,8 +81,8 @@ function generateToken(userId, roomId, appRole = 'audience') {
     app_role: appRole,
     type: 'app',
     version: 2,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 60 * 60,
+    iat: now - 30,
+    exp: now + 60 * 60,
     jti: `${userId}-${Date.now()}`
   };
 
@@ -96,6 +95,7 @@ app.get('/api/get-token', async (req, res) => {
   try {
     const forceNew = req.query.new === 'true';
     const appRole = req.query.role || 'audience';
+    
     if (!ROLE_MAP[appRole]) {
       return res.status(400).json({ error: 'invalid role' });
     }
@@ -111,31 +111,6 @@ app.get('/api/get-token', async (req, res) => {
   }
 });
 
-// Endpoint for judges to submit scores for speakers
-app.post('/api/score', (req, res) => {
-  try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.replace('Bearer ', '');
-    const decoded = jwt.verify(token, process.env.APP_SECRET);
-    if (decoded.app_role !== 'judge') {
-      return res.status(403).json({ error: 'Only judges can score' });
-    }
-
-    const { speakerId, score } = req.body;
-    if (!speakerId || typeof score !== 'number') {
-      return res.status(400).json({ error: 'Invalid payload' });
-    }
-
-    if (!scores[speakerId]) {
-      scores[speakerId] = [];
-    }
-    scores[speakerId].push(score);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Score submission failed:', err.message);
-    res.status(400).json({ error: 'Score submission failed' });
-  }
-});
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
