@@ -16,6 +16,8 @@ import {
 } from '@100mslive/react-sdk';
 import './CustomRoom.css';
 
+const ROLES = ['judge', 'speaker', 'moderator', 'audience'];
+
 // Separate Timer component to avoid re-rendering the main component
 const Timer = ({ startTime, isActive, pauseTime, isPaused }) => {
   const [timeLeft, setTimeLeft] = useState('');
@@ -58,7 +60,7 @@ const Timer = ({ startTime, isActive, pauseTime, isPaused }) => {
 };
 
 // Separate PeerTile component to prevent re-creation on every render
-const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers, pauseTimes, isPaused }) => {
+const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers, pauseTimes, isPaused, isModerator, onMute, onRoleChange }) => {
   const { videoRef } = useVideo({
     trackId: peer.videoTrack,
   });
@@ -91,9 +93,19 @@ const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers, pauseTimes, 
         <span className="peer-name">{displayName}</span>
         <span className="peer-role">{peer.roleName}</span>
       </div>
-      <Timer 
-        startTime={start} 
-        isActive={isActiveSpeaker} 
+      {isModerator && !isLocal && (
+        <div className="mod-controls">
+          <button onClick={() => onMute(peer)}>Mute</button>
+          <select value={peer.roleName} onChange={e => onRoleChange(peer, e.target.value)}>
+            {ROLES.map(r => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      <Timer
+        startTime={start}
+        isActive={isActiveSpeaker}
         pauseTime={pauseTime}
         isPaused={isPaused && isActiveSpeaker}
       />
@@ -300,6 +312,30 @@ function RoomInner({ token, role, userName }) {
     }
   }, [toggleScreenShare, isConnected]);
 
+  const mutePeer = useCallback(
+    peer => {
+      if (!peer.audioTrack) return;
+      hmsActions.setRemoteTrackEnabled(peer.audioTrack, false);
+    },
+    [hmsActions]
+  );
+
+  const changePeerRole = useCallback(
+    (peer, newRole) => {
+      if (peer.roleName === newRole) return;
+      hmsActions.changeRole(peer.id, newRole, true);
+    },
+    [hmsActions]
+  );
+
+  const endDebate = useCallback(async () => {
+    try {
+      await hmsActions.endRoom(false, 'Debate ended by moderator');
+    } catch (error) {
+      console.error('Error ending room:', error);
+    }
+  }, [hmsActions]);
+
   const moveSpeaker = useCallback((from, to) => {
     setSpeakerQueue(prev => {
       const updated = [...prev];
@@ -494,26 +530,32 @@ function RoomInner({ token, role, userName }) {
         {peers
           .filter(peer => !peer.isLocal)
           .map(peer => (
-            <PeerTile 
-              key={peer.id} 
-              peer={peer} 
-              isLocal={false} 
-              userName={userName} 
-              activeSpeaker={activeSpeaker} 
-              timers={timers} 
-              pauseTimes={pauseTimes} 
-              isPaused={isPaused} 
+            <PeerTile
+              key={peer.id}
+              peer={peer}
+              isLocal={false}
+              userName={userName}
+              activeSpeaker={activeSpeaker}
+              timers={timers}
+              pauseTimes={pauseTimes}
+              isPaused={isPaused}
+              isModerator={role === 'moderator'}
+              onMute={mutePeer}
+              onRoleChange={changePeerRole}
             />
           ))}
         {localPeer && (
-          <PeerTile 
-            peer={localPeer} 
-            isLocal={true} 
-            userName={userName} 
-            activeSpeaker={activeSpeaker} 
-            timers={timers} 
-            pauseTimes={pauseTimes} 
-            isPaused={isPaused} 
+          <PeerTile
+            peer={localPeer}
+            isLocal={true}
+            userName={userName}
+            activeSpeaker={activeSpeaker}
+            timers={timers}
+            pauseTimes={pauseTimes}
+            isPaused={isPaused}
+            isModerator={false}
+            onMute={() => {}}
+            onRoleChange={() => {}}
           />
         )}
       </div>
@@ -530,6 +572,9 @@ function RoomInner({ token, role, userName }) {
         </button>
         <button onClick={() => setIsChatOpen(!isChatOpen)}>Chat</button>
         <button onClick={leaveRoom}>Leave Room</button>
+        {role === 'moderator' && (
+          <button onClick={endDebate}>End Debate</button>
+        )}
       </div>
 
       <SpeakerQueue
