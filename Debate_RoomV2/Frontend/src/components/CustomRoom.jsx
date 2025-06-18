@@ -101,14 +101,26 @@ const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers, pauseTimes, 
   );
 };
 
-// Display and optionally control the speaking order
-const SpeakingOrder = ({ order, peers, isModerator, onMove, onStart }) => {
+// Display and optionally control the speaker queue
+const SpeakerQueue = ({
+  queue,
+  peers,
+  isModerator,
+  onMove,
+  onStart,
+  onAdd,
+  onRemove,
+}) => {
   const getPeer = id => peers.find(p => p.id === id);
+  const available = peers.filter(
+    p => p.roleName === 'speaker' && !queue.includes(p.id)
+  );
+
   return (
-    <div className="speaking-order">
-      <h3>Speaking Order</h3>
+    <div className="speaker-queue">
+      <h3>Speaker Queue</h3>
       <ol>
-        {order.map((id, idx) => {
+        {queue.map((id, idx) => {
           const peer = getPeer(id);
           if (!peer) return null;
           return (
@@ -117,14 +129,27 @@ const SpeakingOrder = ({ order, peers, isModerator, onMove, onStart }) => {
               {isModerator && (
                 <>
                   <button onClick={() => onMove(idx, idx - 1)} disabled={idx === 0}>↑</button>
-                  <button onClick={() => onMove(idx, idx + 1)} disabled={idx === order.length - 1}>↓</button>
+                  <button onClick={() => onMove(idx, idx + 1)} disabled={idx === queue.length - 1}>↓</button>
                   <button onClick={() => onStart(id)}>Start</button>
+                  <button onClick={() => onRemove(id)}>Remove</button>
                 </>
               )}
             </li>
           );
         })}
       </ol>
+      {isModerator && available.length > 0 && (
+        <>
+          <h4>Add Speaker</h4>
+          <ul>
+            {available.map(p => (
+              <li key={p.id}>
+                {p.name} <button onClick={() => onAdd(p.id)}>Add</button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 };
@@ -146,7 +171,7 @@ function RoomInner({ token, role, userName }) {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const joinAttempted = useRef(false);
-  const [speakerOrder, setSpeakerOrder] = useState([]);
+  const [speakerQueue, setSpeakerQueue] = useState([]);
 
   // Configure logging
   useEffect(() => {
@@ -167,13 +192,13 @@ function RoomInner({ token, role, userName }) {
     onEvent: handleCustomEvent,
   });
 
-  const handleOrderEvent = useCallback((data) => {
-    setSpeakerOrder(data.order || []);
+  const handleQueueEvent = useCallback((data) => {
+    setSpeakerQueue(data.queue || []);
   }, []);
 
-  const { sendEvent: sendOrderEvent } = useCustomEvent({
-    type: 'SPEAKER_ORDER',
-    onEvent: handleOrderEvent,
+  const { sendEvent: sendQueueEvent } = useCustomEvent({
+    type: 'SPEAKER_QUEUE',
+    onEvent: handleQueueEvent,
   });
 
   useEffect(() => {
@@ -276,24 +301,58 @@ function RoomInner({ token, role, userName }) {
   }, [toggleScreenShare, isConnected]);
 
   const moveSpeaker = useCallback((from, to) => {
-    setSpeakerOrder(prev => {
+    setSpeakerQueue(prev => {
       const updated = [...prev];
       if (to < 0 || to >= updated.length) return prev;
       const [moved] = updated.splice(from, 1);
       updated.splice(to, 0, moved);
       if (role === 'moderator') {
-        sendOrderEvent({ order: updated });
+        sendQueueEvent({ queue: updated });
       }
       return updated;
     });
-  }, [role, sendOrderEvent]);
+  }, [role, sendQueueEvent]);
 
-  const startFromModerator = useCallback(peerId => {
-    startSpeaker(peerId);
-    if (role === 'moderator') {
-      sendOrderEvent({ order: speakerOrder });
-    }
-  }, [startSpeaker, role, sendOrderEvent, speakerOrder]);
+  const addSpeaker = useCallback(
+    peerId => {
+      setSpeakerQueue(prev => {
+        if (prev.includes(peerId)) return prev;
+        const updated = [...prev, peerId];
+        if (role === 'moderator') {
+          sendQueueEvent({ queue: updated });
+        }
+        return updated;
+      });
+    },
+    [role, sendQueueEvent]
+  );
+
+  const removeSpeaker = useCallback(
+    peerId => {
+      setSpeakerQueue(prev => {
+        const updated = prev.filter(id => id !== peerId);
+        if (role === 'moderator') {
+          sendQueueEvent({ queue: updated });
+        }
+        return updated;
+      });
+    },
+    [role, sendQueueEvent]
+  );
+
+  const startFromModerator = useCallback(
+    peerId => {
+      startSpeaker(peerId);
+      setSpeakerQueue(prev => {
+        const updated = prev.filter(id => id !== peerId);
+        if (role === 'moderator') {
+          sendQueueEvent({ queue: updated });
+        }
+        return updated;
+      });
+    },
+    [startSpeaker, role, sendQueueEvent]
+  );
 
   const leaveRoom = useCallback(async () => {
     if (!isConnected) return;
@@ -338,27 +397,33 @@ function RoomInner({ token, role, userName }) {
     [sendEvent, isConnected, activeSpeaker],
   );
 
+  const startNextSpeaker = useCallback(() => {
+    setSpeakerQueue(prev => {
+      if (prev.length === 0) return prev;
+      const [next, ...rest] = prev;
+      startSpeaker(next);
+      if (role === 'moderator') {
+        sendQueueEvent({ queue: rest });
+      }
+      return rest;
+    });
+  }, [startSpeaker, role, sendQueueEvent]);
+
   // Use a ref to track if we've already started a speaker to prevent infinite loops
   const hasStartedSpeaker = useRef(false);
 
-  // Maintain the list of speaker IDs as peers join or leave
+  // Keep the queue in sync when speakers leave
   useEffect(() => {
     if (!isConnected) return;
     const speakerPeers = peers.filter(p => p.roleName === 'speaker');
-    setSpeakerOrder(prev => {
-      let order = prev.filter(id => speakerPeers.some(p => p.id === id));
-      speakerPeers.forEach(p => {
-        if (!order.includes(p.id)) order.push(p.id);
-      });
-      return order;
-    });
+    setSpeakerQueue(prev => prev.filter(id => speakerPeers.some(p => p.id === id)));
   }, [peers, isConnected]);
 
   useEffect(() => {
     if (role !== 'moderator') return;
     if (!isConnected) return;
-    sendOrderEvent({ order: speakerOrder });
-  }, [speakerOrder, role, isConnected, sendOrderEvent]);
+    sendQueueEvent({ queue: speakerQueue });
+  }, [speakerQueue, role, isConnected, sendQueueEvent]);
 
   useEffect(() => {
     if (!isConnected || activeSpeaker || !localPeer || hasStartedSpeaker.current) return;
@@ -412,11 +477,12 @@ function RoomInner({ token, role, userName }) {
       if (elapsedTime >= 120000) {
         hmsActions.setLocalAudioEnabled(false);
         setActiveSpeaker(null);
+        startNextSpeaker();
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activeSpeaker, timers, pauseTimes, isPaused, peers, hmsActions, localPeer, isConnected, sendEvent]);
+  }, [activeSpeaker, timers, pauseTimes, isPaused, peers, hmsActions, localPeer, isConnected, sendEvent, startNextSpeaker]);
 
   if (!isConnected) {
     return <div>Connecting to room...</div>;
@@ -466,12 +532,14 @@ function RoomInner({ token, role, userName }) {
         <button onClick={leaveRoom}>Leave Room</button>
       </div>
 
-      <SpeakingOrder
-        order={speakerOrder}
+      <SpeakerQueue
+        queue={speakerQueue}
         peers={peers}
         isModerator={role === 'moderator'}
         onMove={moveSpeaker}
         onStart={startFromModerator}
+        onAdd={addSpeaker}
+        onRemove={removeSpeaker}
       />
 
       {isChatOpen && (
