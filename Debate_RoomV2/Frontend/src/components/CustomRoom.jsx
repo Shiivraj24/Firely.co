@@ -17,7 +17,7 @@ import {
 import './CustomRoom.css';
 
 // Separate Timer component to avoid re-rendering the main component
-const Timer = ({ startTime, isActive }) => {
+const Timer = ({ startTime, isActive, pauseTime, isPaused }) => {
   const [timeLeft, setTimeLeft] = useState('');
 
   useEffect(() => {
@@ -27,7 +27,16 @@ const Timer = ({ startTime, isActive }) => {
     }
 
     const updateTimer = () => {
-      const diff = Math.max(0, 120 - Math.floor((Date.now() - startTime) / 1000));
+      let elapsedTime;
+      if (isPaused && pauseTime) {
+        // If paused, calculate elapsed time up to when it was paused
+        elapsedTime = Math.floor((pauseTime - startTime) / 1000);
+      } else {
+        // If not paused, calculate current elapsed time
+        elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+      }
+      
+      const diff = Math.max(0, 120 - elapsedTime);
       const mins = String(Math.floor(diff / 60)).padStart(2, '0');
       const secs = String(diff % 60).padStart(2, '0');
       setTimeLeft(`${mins}:${secs}`);
@@ -36,20 +45,26 @@ const Timer = ({ startTime, isActive }) => {
     updateTimer(); // Update immediately
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [startTime, isActive]);
+  }, [startTime, isActive, pauseTime, isPaused]);
 
   if (!isActive || !timeLeft) return null;
 
-  return <div className="peer-timer">{timeLeft}</div>;
+  return (
+    <div className="peer-timer">
+      {timeLeft}
+      {isPaused && <span style={{ fontSize: '0.8em', marginLeft: '5px' }}>(PAUSED)</span>}
+    </div>
+  );
 };
 
 // Separate PeerTile component to prevent re-creation on every render
-const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers }) => {
+const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers, pauseTimes, isPaused }) => {
   const { videoRef } = useVideo({
     trackId: peer.videoTrack,
   });
 
   const start = timers[activeSpeaker];
+  const pauseTime = pauseTimes[activeSpeaker];
   const isActiveSpeaker = peer.id === activeSpeaker;
 
   const displayName = isLocal ? userName : peer.name;
@@ -76,7 +91,12 @@ const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers }) => {
         <span className="peer-name">{displayName}</span>
         <span className="peer-role">{peer.roleName}</span>
       </div>
-      <Timer startTime={start} isActive={isActiveSpeaker} />
+      <Timer 
+        startTime={start} 
+        isActive={isActiveSpeaker} 
+        pauseTime={pauseTime}
+        isPaused={isPaused && isActiveSpeaker}
+      />
     </div>
   );
 };
@@ -92,6 +112,8 @@ function RoomInner({ token, role, userName }) {
   const { amIScreenSharing, screenShareVideoTrackId, toggleScreenShare } = useScreenShare();
   const [chatInput, setChatInput] = useState('');
   const [timers, setTimers] = useState({});
+  const [pauseTimes, setPauseTimes] = useState({});
+  const [isPaused, setIsPaused] = useState(false);
   const [activeSpeaker, setActiveSpeaker] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
@@ -106,6 +128,9 @@ function RoomInner({ token, role, userName }) {
   const handleCustomEvent = useCallback((data) => {
     setActiveSpeaker(data.peerId);
     setTimers({ [data.peerId]: data.start });
+    // Reset pause state when a new speaker starts
+    setPauseTimes({});
+    setIsPaused(false);
   }, []);
 
   const { sendEvent } = useCustomEvent({
@@ -163,10 +188,45 @@ function RoomInner({ token, role, userName }) {
     if (!isConnected) return;
     try {
       await hmsActions.setLocalAudioEnabled(!isLocalAudioEnabled);
+      
+      // Handle timer pause/resume for active speaker
+      if (activeSpeaker === localPeer?.id) {
+        if (isLocalAudioEnabled) {
+          // Speaker is about to be muted - pause the timer
+          setPauseTimes(prev => ({
+            ...prev,
+            [activeSpeaker]: Date.now()
+          }));
+          setIsPaused(true);
+        } else {
+          // Speaker is about to be unmuted - resume the timer
+          const pauseTime = pauseTimes[activeSpeaker];
+          if (pauseTime) {
+            // Calculate how much time was paused and adjust the start time
+            const pausedDuration = Date.now() - pauseTime;
+            const originalStart = timers[activeSpeaker];
+            const adjustedStart = originalStart + pausedDuration;
+            
+            // Update the timer with the adjusted start time
+            setTimers(prev => ({
+              ...prev,
+              [activeSpeaker]: adjustedStart
+            }));
+          }
+          
+          // Clear the pause time
+          setPauseTimes(prev => {
+            const newPauseTimes = { ...prev };
+            delete newPauseTimes[activeSpeaker];
+            return newPauseTimes;
+          });
+          setIsPaused(false);
+        }
+      }
     } catch (error) {
       console.error('Error toggling audio:', error);
     }
-  }, [hmsActions, isLocalAudioEnabled, isConnected]);
+  }, [hmsActions, isLocalAudioEnabled, isConnected, activeSpeaker, localPeer, pauseTimes, timers]);
 
   const handleScreenShare = useCallback(async () => {
     if (!isConnected) return;
@@ -184,6 +244,8 @@ function RoomInner({ token, role, userName }) {
       await hmsActions.leave();
       setChatInput('');
       setTimers({});
+      setPauseTimes({});
+      setIsPaused(false);
       setActiveSpeaker(null);
       setIsChatOpen(false);
     } catch (error) {
@@ -211,6 +273,9 @@ function RoomInner({ token, role, userName }) {
       sendEvent({ peerId, start });
       setActiveSpeaker(peerId);
       setTimers({ [peerId]: start });
+      // Reset pause state for new speaker
+      setPauseTimes({});
+      setIsPaused(false);
     },
     [sendEvent, isConnected, activeSpeaker],
   );
@@ -257,7 +322,15 @@ function RoomInner({ token, role, userName }) {
     if (!start || activeSpeaker !== localPeer.id) return;
 
     const interval = setInterval(() => {
-      if (Date.now() - start >= 120000) {
+      // Calculate elapsed time accounting for pauses
+      let elapsedTime = Date.now() - start;
+      const pauseTime = pauseTimes[activeSpeaker];
+      if (isPaused && pauseTime) {
+        // If paused, only count time up to when it was paused
+        elapsedTime = pauseTime - start;
+      }
+      
+      if (elapsedTime >= 120000) {
         const speakerPeers = peers
           .filter(p => p.roleName === 'speaker')
           .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
@@ -271,11 +344,14 @@ function RoomInner({ token, role, userName }) {
         sendEvent({ peerId: nextPeerId, start: newStart });
         setActiveSpeaker(nextPeerId);
         setTimers({ [nextPeerId]: newStart });
+        // Reset pause state for new speaker
+        setPauseTimes({});
+        setIsPaused(false);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activeSpeaker, timers, peers, hmsActions, localPeer, isConnected, sendEvent]);
+  }, [activeSpeaker, timers, pauseTimes, isPaused, peers, hmsActions, localPeer, isConnected, sendEvent]);
 
   if (!isConnected) {
     return <div>Connecting to room...</div>;
@@ -287,9 +363,28 @@ function RoomInner({ token, role, userName }) {
         {peers
           .filter(peer => !peer.isLocal)
           .map(peer => (
-            <PeerTile key={peer.id} peer={peer} isLocal={false} userName={userName} activeSpeaker={activeSpeaker} timers={timers} />
+            <PeerTile 
+              key={peer.id} 
+              peer={peer} 
+              isLocal={false} 
+              userName={userName} 
+              activeSpeaker={activeSpeaker} 
+              timers={timers} 
+              pauseTimes={pauseTimes} 
+              isPaused={isPaused} 
+            />
           ))}
-        {localPeer && <PeerTile peer={localPeer} isLocal={true} userName={userName} activeSpeaker={activeSpeaker} timers={timers} />}
+        {localPeer && (
+          <PeerTile 
+            peer={localPeer} 
+            isLocal={true} 
+            userName={userName} 
+            activeSpeaker={activeSpeaker} 
+            timers={timers} 
+            pauseTimes={pauseTimes} 
+            isPaused={isPaused} 
+          />
+        )}
       </div>
 
       <div className="controls">
