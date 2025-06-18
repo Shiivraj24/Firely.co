@@ -101,6 +101,34 @@ const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers, pauseTimes, 
   );
 };
 
+// Display and optionally control the speaking order
+const SpeakingOrder = ({ order, peers, isModerator, onMove, onStart }) => {
+  const getPeer = id => peers.find(p => p.id === id);
+  return (
+    <div className="speaking-order">
+      <h3>Speaking Order</h3>
+      <ol>
+        {order.map((id, idx) => {
+          const peer = getPeer(id);
+          if (!peer) return null;
+          return (
+            <li key={id}>
+              {peer.name}
+              {isModerator && (
+                <>
+                  <button onClick={() => onMove(idx, idx - 1)} disabled={idx === 0}>↑</button>
+                  <button onClick={() => onMove(idx, idx + 1)} disabled={idx === order.length - 1}>↓</button>
+                  <button onClick={() => onStart(id)}>Start</button>
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+};
+
 function RoomInner({ token, role, userName }) {
   const hmsActions = useHMSActions();
   const isConnected = useHMSStore(selectIsConnectedToRoom);
@@ -118,6 +146,7 @@ function RoomInner({ token, role, userName }) {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const joinAttempted = useRef(false);
+  const [speakerOrder, setSpeakerOrder] = useState([]);
 
   // Configure logging
   useEffect(() => {
@@ -136,6 +165,15 @@ function RoomInner({ token, role, userName }) {
   const { sendEvent } = useCustomEvent({
     type: 'ACTIVE_SPEAKER',
     onEvent: handleCustomEvent,
+  });
+
+  const handleOrderEvent = useCallback((data) => {
+    setSpeakerOrder(data.order || []);
+  }, []);
+
+  const { sendEvent: sendOrderEvent } = useCustomEvent({
+    type: 'SPEAKER_ORDER',
+    onEvent: handleOrderEvent,
   });
 
   useEffect(() => {
@@ -237,6 +275,26 @@ function RoomInner({ token, role, userName }) {
     }
   }, [toggleScreenShare, isConnected]);
 
+  const moveSpeaker = useCallback((from, to) => {
+    setSpeakerOrder(prev => {
+      const updated = [...prev];
+      if (to < 0 || to >= updated.length) return prev;
+      const [moved] = updated.splice(from, 1);
+      updated.splice(to, 0, moved);
+      if (role === 'moderator') {
+        sendOrderEvent({ order: updated });
+      }
+      return updated;
+    });
+  }, [role, sendOrderEvent]);
+
+  const startFromModerator = useCallback(peerId => {
+    startSpeaker(peerId);
+    if (role === 'moderator') {
+      sendOrderEvent({ order: speakerOrder });
+    }
+  }, [startSpeaker, role, sendOrderEvent, speakerOrder]);
+
   const leaveRoom = useCallback(async () => {
     if (!isConnected) return;
     try {
@@ -283,9 +341,30 @@ function RoomInner({ token, role, userName }) {
   // Use a ref to track if we've already started a speaker to prevent infinite loops
   const hasStartedSpeaker = useRef(false);
 
+  // Maintain the list of speaker IDs as peers join or leave
+  useEffect(() => {
+    if (!isConnected) return;
+    const speakerPeers = peers.filter(p => p.roleName === 'speaker');
+    setSpeakerOrder(prev => {
+      let order = prev.filter(id => speakerPeers.some(p => p.id === id));
+      speakerPeers.forEach(p => {
+        if (!order.includes(p.id)) order.push(p.id);
+      });
+      return order;
+    });
+  }, [peers, isConnected]);
+
+  useEffect(() => {
+    if (role !== 'moderator') return;
+    if (!isConnected) return;
+    sendOrderEvent({ order: speakerOrder });
+  }, [speakerOrder, role, isConnected, sendOrderEvent]);
+
   useEffect(() => {
     if (!isConnected || activeSpeaker || !localPeer || hasStartedSpeaker.current) return;
     if (localPeer.roleName !== 'speaker') return;
+    const moderators = peers.filter(p => p.roleName === 'moderator');
+    if (moderators.length > 0) return; // wait for moderator to start
 
     const speakerPeers = peers
       .filter(p => p.roleName === 'speaker')
@@ -331,22 +410,8 @@ function RoomInner({ token, role, userName }) {
       }
       
       if (elapsedTime >= 120000) {
-        const speakerPeers = peers
-          .filter(p => p.roleName === 'speaker')
-          .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
-        const currentIndex = speakerPeers.findIndex(p => p.id === activeSpeaker);
-        const nextIndex = (currentIndex + 1) % speakerPeers.length;
-        const nextPeerId = speakerPeers[nextIndex].id;
         hmsActions.setLocalAudioEnabled(false);
-        
-        // Handle speaker rotation directly instead of calling startSpeaker
-        const newStart = Date.now();
-        sendEvent({ peerId: nextPeerId, start: newStart });
-        setActiveSpeaker(nextPeerId);
-        setTimers({ [nextPeerId]: newStart });
-        // Reset pause state for new speaker
-        setPauseTimes({});
-        setIsPaused(false);
+        setActiveSpeaker(null);
       }
     }, 1000);
 
@@ -400,6 +465,14 @@ function RoomInner({ token, role, userName }) {
         <button onClick={() => setIsChatOpen(!isChatOpen)}>Chat</button>
         <button onClick={leaveRoom}>Leave Room</button>
       </div>
+
+      <SpeakingOrder
+        order={speakerOrder}
+        peers={peers}
+        isModerator={role === 'moderator'}
+        onMove={moveSpeaker}
+        onStart={startFromModerator}
+      />
 
       {isChatOpen && (
         <div className="chat-container">
