@@ -86,6 +86,7 @@ function RoomInner({ token, role, userName }) {
 
   const handleAudioStateChange = useCallback(() => {
     if (!activeSpeaker || !localPeer) return;
+    if (localPeer.roleName !== 'speaker') return;
     if (activeSpeaker === localPeer.id && !isLocalAudioEnabled) {
       setTimers(prev => {
         const newTimers = { ...prev };
@@ -155,6 +156,7 @@ function RoomInner({ token, role, userName }) {
 
   useEffect(() => {
     if (!isConnected || activeSpeaker || !localPeer) return;
+    if (localPeer.roleName !== 'speaker') return;
 
     const speakerPeers = peers
       .filter(p => p.roleName === 'speaker')
@@ -167,6 +169,7 @@ function RoomInner({ token, role, userName }) {
 
   const updateAudioState = useCallback(async () => {
     if (!isConnected || !localPeer) return;
+    if (localPeer.roleName !== 'speaker') return;
     
     const shouldBeEnabled = activeSpeaker === localPeer.id;
     if (shouldBeEnabled !== isLocalAudioEnabled) {
@@ -184,6 +187,7 @@ function RoomInner({ token, role, userName }) {
 
   useEffect(() => {
     if (!isConnected || !activeSpeaker || !localPeer) return;
+    if (localPeer.roleName !== 'speaker') return;
     
     const start = timers[activeSpeaker];
     if (!start || activeSpeaker !== localPeer.id) return;
