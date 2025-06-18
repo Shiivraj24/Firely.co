@@ -213,9 +213,9 @@ function RoomInner({ token, role, userName }) {
       trackId: peer.videoTrack,
     });
 
-    const start = timers[peer.id];
+    const start = timers[activeSpeaker];
     let remaining = null;
-    if (start) {
+    if (start && peer.id === activeSpeaker) {
       const diff = Math.max(0, 120 - Math.floor((now - start) / 1000));
       const mins = String(Math.floor(diff / 60)).padStart(2, '0');
       const secs = String(diff % 60).padStart(2, '0');
@@ -231,6 +231,7 @@ function RoomInner({ token, role, userName }) {
           autoPlay
           muted={isLocal}
           playsInline
+          controls={false}
           className="peer-video"
           style={{
             width: '100%',
@@ -316,6 +317,7 @@ function ScreenShareView({ trackId }) {
       ref={videoRef}
       autoPlay
       playsInline
+      controls={false}
       style={{ width: '100%', maxHeight: '70vh' }}
     />
   );

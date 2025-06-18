@@ -32,6 +32,24 @@
   background: #000;
   border-radius: 4px;
   margin-bottom: 10px;
+  pointer-events: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Disable context menu on video elements */
+.peer-video::-webkit-media-controls {
+  display: none !important;
+}
+
+.peer-video::-webkit-media-controls-enclosure {
+  display: none !important;
+}
+
+.peer-video::-webkit-media-controls-panel {
+  display: none !important;
 }
 
 .peer-info {
@@ -159,4 +177,34 @@
 
 .message .content {
   color: #333;
+}
+
+/* Global video element styling to prevent context menu */
+video {
+  pointer-events: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Disable context menu on all video elements */
+video::-webkit-media-controls {
+  display: none !important;
+}
+
+video::-webkit-media-controls-enclosure {
+  display: none !important;
+}
+
+video::-webkit-media-controls-panel {
+  display: none !important;
+}
+
+/* Prevent right-click context menu on video elements */
+video {
+  -webkit-context-menu: none;
+  -moz-context-menu: none;
+  -ms-context-menu: none;
+  context-menu: none;
 } 
