@@ -340,6 +340,23 @@ function RoomInner({ token, role, userName }) {
     [role, sendQueueEvent]
   );
 
+  const startSpeaker = useCallback(
+    peerId => {
+      if (!isConnected) return;
+      // Prevent starting the same speaker again
+      if (activeSpeaker === peerId) return;
+
+      const start = Date.now();
+      sendEvent({ peerId, start });
+      setActiveSpeaker(peerId);
+      setTimers({ [peerId]: start });
+      // Reset pause state for new speaker
+      setPauseTimes({});
+      setIsPaused(false);
+    },
+    [sendEvent, isConnected, activeSpeaker]
+  );
+
   const startFromModerator = useCallback(
     peerId => {
       startSpeaker(peerId);
@@ -378,23 +395,6 @@ function RoomInner({ token, role, userName }) {
       setChatInput('');
     },
     [chatInput, hmsActions, isConnected],
-  );
-
-  const startSpeaker = useCallback(
-    peerId => {
-      if (!isConnected) return;
-      // Prevent starting the same speaker again
-      if (activeSpeaker === peerId) return;
-      
-      const start = Date.now();
-      sendEvent({ peerId, start });
-      setActiveSpeaker(peerId);
-      setTimers({ [peerId]: start });
-      // Reset pause state for new speaker
-      setPauseTimes({});
-      setIsPaused(false);
-    },
-    [sendEvent, isConnected, activeSpeaker],
   );
 
   const startNextSpeaker = useCallback(() => {
