@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+
 import { HMSRoomProvider } from '@100mslive/react-sdk';
 import CustomRoom from './components/CustomRoom';
+
 
 function App() {
   const [role, setRole] = useState('audience');
@@ -33,6 +35,7 @@ function App() {
       setIsLoading(false);
     }
   };
+
 
   return (
     <HMSRoomProvider>
