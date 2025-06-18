@@ -4,7 +4,6 @@ import { useCustomEvent } from '@100mslive/react-sdk';
 export const useSpeakerManager = (isConnected, hmsActions, peers, localPeer, isLocalAudioEnabled) => {
   const [timers, setTimers] = useState({});
   const [activeSpeaker, setActiveSpeaker] = useState(null);
-  const [now, setNow] = useState(Date.now());
 
   const { sendEvent } = useCustomEvent({
     type: 'ACTIVE_SPEAKER',
@@ -13,12 +12,6 @@ export const useSpeakerManager = (isConnected, hmsActions, peers, localPeer, isL
       setTimers({ [data.peerId]: data.start });
     },
   });
-
-  // Update current time every second
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
 
   const startSpeaker = useCallback(
     peerId => {
@@ -91,7 +84,7 @@ export const useSpeakerManager = (isConnected, hmsActions, peers, localPeer, isL
     if (!start || activeSpeaker !== localPeer.id) return;
 
     const interval = setInterval(() => {
-      if (now - start >= 120000) { // 2 minutes
+      if (Date.now() - start >= 120000) { // 2 minutes
         const speakerPeers = peers
           .filter(p => p.roleName === 'speaker')
           .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
@@ -104,7 +97,7 @@ export const useSpeakerManager = (isConnected, hmsActions, peers, localPeer, isL
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activeSpeaker, timers, peers, startSpeaker, hmsActions, localPeer, isConnected, now]);
+  }, [activeSpeaker, timers, peers, startSpeaker, hmsActions, localPeer, isConnected]);
 
   const resetSpeakerState = useCallback(() => {
     setTimers({});
@@ -114,7 +107,6 @@ export const useSpeakerManager = (isConnected, hmsActions, peers, localPeer, isL
   return {
     activeSpeaker,
     timers,
-    now,
     startSpeaker,
     resetSpeakerState
   };

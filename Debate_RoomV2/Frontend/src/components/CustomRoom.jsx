@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   useHMSStore,
   selectPeers,
@@ -16,6 +16,71 @@ import {
 } from '@100mslive/react-sdk';
 import './CustomRoom.css';
 
+// Separate Timer component to avoid re-rendering the main component
+const Timer = ({ startTime, isActive }) => {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    if (!isActive || !startTime) {
+      setTimeLeft('');
+      return;
+    }
+
+    const updateTimer = () => {
+      const diff = Math.max(0, 120 - Math.floor((Date.now() - startTime) / 1000));
+      const mins = String(Math.floor(diff / 60)).padStart(2, '0');
+      const secs = String(diff % 60).padStart(2, '0');
+      setTimeLeft(`${mins}:${secs}`);
+    };
+
+    updateTimer(); // Update immediately
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [startTime, isActive]);
+
+  if (!isActive || !timeLeft) return null;
+
+  return <div className="peer-timer">{timeLeft}</div>;
+};
+
+// Separate PeerTile component to prevent re-creation on every render
+const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers }) => {
+  const { videoRef } = useVideo({
+    trackId: peer.videoTrack,
+  });
+
+  const start = timers[activeSpeaker];
+  const isActiveSpeaker = peer.id === activeSpeaker;
+
+  const displayName = isLocal ? userName : peer.name;
+
+  return (
+    <div className={`peer-tile ${peer.id === activeSpeaker ? 'active' : ''}`}>
+      <video
+        ref={videoRef}
+        autoPlay
+        muted={isLocal}
+        playsInline
+        controls={false}
+        className="peer-video"
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          borderRadius: '8px',
+          backgroundColor: '#1a1a1a',
+          transform: 'scaleX(-1)'
+        }}       
+      />
+      <div className="peer-info">
+        <span className="peer-name">{displayName}</span>
+        <span className="peer-role">{peer.roleName}</span>
+      </div>
+      <Timer startTime={start} isActive={isActiveSpeaker} />
+    </div>
+  );
+};
+
 function RoomInner({ token, role, userName }) {
   const hmsActions = useHMSActions();
   const isConnected = useHMSStore(selectIsConnectedToRoom);
@@ -29,7 +94,6 @@ function RoomInner({ token, role, userName }) {
   const [timers, setTimers] = useState({});
   const [activeSpeaker, setActiveSpeaker] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [now, setNow] = useState(Date.now());
   const [isJoining, setIsJoining] = useState(false);
   const joinAttempted = useRef(false);
 
@@ -38,18 +102,16 @@ function RoomInner({ token, role, userName }) {
     hmsActions.setLogLevel(HMSLogLevel.ERROR);
   }, [hmsActions]);
 
+  // Memoize the onEvent callback to prevent infinite re-renders
+  const handleCustomEvent = useCallback((data) => {
+    setActiveSpeaker(data.peerId);
+    setTimers({ [data.peerId]: data.start });
+  }, []);
+
   const { sendEvent } = useCustomEvent({
     type: 'ACTIVE_SPEAKER',
-    onEvent: data => {
-      setActiveSpeaker(data.peerId);
-      setTimers({ [data.peerId]: data.start });
-    },
+    onEvent: handleCustomEvent,
   });
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -97,10 +159,6 @@ function RoomInner({ token, role, userName }) {
     }
   }, [activeSpeaker, localPeer, isLocalAudioEnabled]);
 
-  useEffect(() => {
-    handleAudioStateChange();
-  }, [handleAudioStateChange]);
-
   const handleAudioToggle = useCallback(async () => {
     if (!isConnected) return;
     try {
@@ -146,16 +204,22 @@ function RoomInner({ token, role, userName }) {
   const startSpeaker = useCallback(
     peerId => {
       if (!isConnected) return;
+      // Prevent starting the same speaker again
+      if (activeSpeaker === peerId) return;
+      
       const start = Date.now();
       sendEvent({ peerId, start });
       setActiveSpeaker(peerId);
       setTimers({ [peerId]: start });
     },
-    [sendEvent, isConnected],
+    [sendEvent, isConnected, activeSpeaker],
   );
 
+  // Use a ref to track if we've already started a speaker to prevent infinite loops
+  const hasStartedSpeaker = useRef(false);
+
   useEffect(() => {
-    if (!isConnected || activeSpeaker || !localPeer) return;
+    if (!isConnected || activeSpeaker || !localPeer || hasStartedSpeaker.current) return;
     if (localPeer.roleName !== 'speaker') return;
 
     const speakerPeers = peers
@@ -163,9 +227,13 @@ function RoomInner({ token, role, userName }) {
       .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
 
     if (speakerPeers.length > 0 && localPeer.id === speakerPeers[0].id) {
-      startSpeaker(localPeer.id);
+      hasStartedSpeaker.current = true;
+      const start = Date.now();
+      sendEvent({ peerId: localPeer.id, start });
+      setActiveSpeaker(localPeer.id);
+      setTimers({ [localPeer.id]: start });
     }
-  }, [peers, activeSpeaker, startSpeaker, localPeer, isConnected]);
+  }, [peers, activeSpeaker, localPeer, isConnected, sendEvent]);
 
   const updateAudioState = useCallback(async () => {
     if (!isConnected || !localPeer) return;
@@ -182,10 +250,6 @@ function RoomInner({ token, role, userName }) {
   }, [activeSpeaker, hmsActions, localPeer, isConnected, isLocalAudioEnabled]);
 
   useEffect(() => {
-    updateAudioState();
-  }, [updateAudioState]);
-
-  useEffect(() => {
     if (!isConnected || !activeSpeaker || !localPeer) return;
     if (localPeer.roleName !== 'speaker') return;
     
@@ -193,7 +257,7 @@ function RoomInner({ token, role, userName }) {
     if (!start || activeSpeaker !== localPeer.id) return;
 
     const interval = setInterval(() => {
-      if (now - start >= 120000) {
+      if (Date.now() - start >= 120000) {
         const speakerPeers = peers
           .filter(p => p.roleName === 'speaker')
           .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
@@ -201,55 +265,17 @@ function RoomInner({ token, role, userName }) {
         const nextIndex = (currentIndex + 1) % speakerPeers.length;
         const nextPeerId = speakerPeers[nextIndex].id;
         hmsActions.setLocalAudioEnabled(false);
-        startSpeaker(nextPeerId);
+        
+        // Handle speaker rotation directly instead of calling startSpeaker
+        const newStart = Date.now();
+        sendEvent({ peerId: nextPeerId, start: newStart });
+        setActiveSpeaker(nextPeerId);
+        setTimers({ [nextPeerId]: newStart });
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activeSpeaker, timers, peers, startSpeaker, hmsActions, localPeer, isConnected, now]);
-
-  const PeerTile = ({ peer, isLocal }) => {
-    const { videoRef } = useVideo({
-      trackId: peer.videoTrack,
-    });
-
-    const start = timers[activeSpeaker];
-    let remaining = null;
-    if (start && peer.id === activeSpeaker) {
-      const diff = Math.max(0, 120 - Math.floor((now - start) / 1000));
-      const mins = String(Math.floor(diff / 60)).padStart(2, '0');
-      const secs = String(diff % 60).padStart(2, '0');
-      remaining = `${mins}:${secs}`;
-    }
-
-    const displayName = isLocal ? userName : peer.name;
-
-    return (
-      <div className={`peer-tile ${peer.id === activeSpeaker ? 'active' : ''}`}>
-        <video
-          ref={videoRef}
-          autoPlay
-          muted={isLocal}
-          playsInline
-          controls={false}
-          className="peer-video"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            borderRadius: '8px',
-            backgroundColor: '#1a1a1a',
-            transform: 'scaleX(-1)'
-          }}       
-        />
-        <div className="peer-info">
-          <span className="peer-name">{displayName}</span>
-          <span className="peer-role">{peer.roleName}</span>
-        </div>
-        {remaining && <div className="peer-timer">{remaining}</div>}
-      </div>
-    );
-  };
+  }, [activeSpeaker, timers, peers, hmsActions, localPeer, isConnected, sendEvent]);
 
   if (!isConnected) {
     return <div>Connecting to room...</div>;
@@ -261,9 +287,9 @@ function RoomInner({ token, role, userName }) {
         {peers
           .filter(peer => !peer.isLocal)
           .map(peer => (
-            <PeerTile key={peer.id} peer={peer} isLocal={false} />
+            <PeerTile key={peer.id} peer={peer} isLocal={false} userName={userName} activeSpeaker={activeSpeaker} timers={timers} />
           ))}
-        {localPeer && <PeerTile peer={localPeer} isLocal={true} />}
+        {localPeer && <PeerTile peer={localPeer} isLocal={true} userName={userName} activeSpeaker={activeSpeaker} timers={timers} />}
       </div>
 
       <div className="controls">
