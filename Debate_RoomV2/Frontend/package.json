@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@100mslive/react-sdk": "^0.10.35",
+    "@100mslive/roomkit-react": "^0.10.35",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
