@@ -1,162 +1,24 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   useHMSStore,
   selectPeers,
   useHMSActions,
   selectLocalPeer,
   selectIsConnectedToRoom,
-  selectCameraStreamByPeerID,
   selectHMSMessages,
   useVideo,
   useAVToggle,
-  useScreenShare,
   useCustomEvent,
   selectRemotePeers,
   HMSLogLevel,
 } from '@100mslive/react-sdk';
+import PeerTile from './PeerTile';
+import SpeakerQueue from './SpeakerQueue';
+import { MediaControls } from './MediaControls';
 import './CustomRoom.css';
 
 const ROLES = ['judge', 'speaker', 'moderator', 'audience'];
 
-// Separate Timer component to avoid re-rendering the main component
-const Timer = ({ startTime, isActive, pauseTime, isPaused }) => {
-  const [timeLeft, setTimeLeft] = useState('');
-
-  useEffect(() => {
-    if (!isActive || !startTime) {
-      setTimeLeft('');
-      return;
-    }
-
-    const updateTimer = () => {
-      let elapsedTime;
-      if (isPaused && pauseTime) {
-        // If paused, calculate elapsed time up to when it was paused
-        elapsedTime = Math.floor((pauseTime - startTime) / 1000);
-      } else {
-        // If not paused, calculate current elapsed time
-        elapsedTime = Math.floor((Date.now() - startTime) / 1000);
-      }
-      
-      const diff = Math.max(0, 120 - elapsedTime);
-      const mins = String(Math.floor(diff / 60)).padStart(2, '0');
-      const secs = String(diff % 60).padStart(2, '0');
-      setTimeLeft(`${mins}:${secs}`);
-    };
-
-    updateTimer(); // Update immediately
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [startTime, isActive, pauseTime, isPaused]);
-
-  if (!isActive || !timeLeft) return null;
-
-  return (
-    <div className="peer-timer">
-      {timeLeft}
-      {isPaused && <span style={{ fontSize: '0.8em', marginLeft: '5px' }}>(PAUSED)</span>}
-    </div>
-  );
-};
-
-// Separate PeerTile component to prevent re-creation on every render
-const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers, pauseTimes, isPaused, isModerator, onMute, onRoleChange }) => {
-  const { videoRef } = useVideo({
-    trackId: peer.videoTrack,
-  });
-
-  const start = timers[activeSpeaker];
-  const pauseTime = pauseTimes[activeSpeaker];
-  const isActiveSpeaker = peer.id === activeSpeaker;
-
-  const displayName = isLocal ? userName : peer.name;
-
-  return (
-    <div className={`peer-tile ${peer.id === activeSpeaker ? 'active' : ''}`}>
-      <video
-        ref={videoRef}
-        autoPlay
-        muted={isLocal}
-        playsInline
-        controls={false}
-        className="peer-video"
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          borderRadius: '8px',
-          backgroundColor: '#1a1a1a',
-          transform: 'scaleX(-1)'
-        }}       
-      />
-      <div className="peer-info">
-        <span className="peer-name">{displayName}</span>
-        <span className="peer-role">{peer.roleName}</span>
-      </div>
-      
-      
-      <Timer
-        startTime={start}
-        isActive={isActiveSpeaker}
-        pauseTime={pauseTime}
-        isPaused={isPaused && isActiveSpeaker}
-      />
-    </div>
-  );
-};
-
-// Display and optionally control the speaker queue
-const SpeakerQueue = ({
-  queue,
-  peers,
-  isModerator,
-  onMove,
-  onStart,
-  onAdd,
-  onRemove,
-}) => {
-  const getPeer = id => peers.find(p => p.id === id);
-  const available = peers.filter(
-    p => p.roleName === 'speaker' && !queue.includes(p.id)
-  );
-
-  return (
-    <div className="speaker-queue">
-      <h3>Speaker Queue</h3>
-      <ol>
-        {queue.map((id, idx) => {
-          const peer = getPeer(id);
-          if (!peer) return null;
-          return (
-            <li key={id}>
-              {peer.name}
-              {isModerator && (
-                <>
-                  <button onClick={() => onMove(idx, idx - 1)} disabled={idx === 0}>↑</button>
-                  <button onClick={() => onMove(idx, idx + 1)} disabled={idx === queue.length - 1}>↓</button>
-                  <button onClick={() => onStart(id)}>Start</button>
-                  <button onClick={() => onRemove(id)}>Remove</button>
-                </>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-      {isModerator && available.length > 0 && (
-        <>
-          <h4>Add Speaker</h4>
-          <ul>
-            {available.map(p => (
-              <li key={p.id}>
-                {p.name} <button onClick={() => onAdd(p.id)}>Add</button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </div>
-  );
-};
 
 function RoomInner({ token, role, userName }) {
   const hmsActions = useHMSActions();
@@ -165,8 +27,7 @@ function RoomInner({ token, role, userName }) {
   const localPeer = useHMSStore(selectLocalPeer);
   const remotepeer = useHMSStore(selectRemotePeers);
   const messages = useHMSStore(selectHMSMessages);
-  const { isLocalAudioEnabled, isLocalVideoEnabled, toggleAudio, toggleVideo } = useAVToggle();
-  const { amIScreenSharing, screenShareVideoTrackId, toggleScreenShare } = useScreenShare();
+  const { isLocalAudioEnabled } = useAVToggle();
   const [chatInput, setChatInput] = useState('');
   const [timers, setTimers] = useState({});
   const [pauseTimes, setPauseTimes] = useState({});
@@ -238,18 +99,6 @@ function RoomInner({ token, role, userName }) {
     };
   }, [token, hmsActions, userName, isConnected, isJoining]);
 
-  const handleAudioStateChange = useCallback(() => {
-    if (!activeSpeaker || !localPeer) return;
-    if (localPeer.roleName !== 'speaker') return;
-    if (activeSpeaker === localPeer.id && !isLocalAudioEnabled) {
-      setTimers(prev => {
-        const newTimers = { ...prev };
-        delete newTimers[activeSpeaker];
-        return newTimers;
-      });
-      setActiveSpeaker(null);
-    }
-  }, [activeSpeaker, localPeer, isLocalAudioEnabled]);
 
   const handleAudioToggle = useCallback(async () => {
     if (!isConnected) return;
@@ -295,30 +144,7 @@ function RoomInner({ token, role, userName }) {
     }
   }, [hmsActions, isLocalAudioEnabled, isConnected, activeSpeaker, localPeer, pauseTimes, timers]);
 
-  const handleScreenShare = useCallback(async () => {
-    if (!isConnected) return;
-    try {
-      await toggleScreenShare();
-    } catch (error) {
-      console.error('Error toggling screen share:', error);
-    }
-  }, [toggleScreenShare, isConnected]);
 
-  const mutePeer = useCallback(
-    peer => {
-      if (!peer.audioTrack) return;
-      hmsActions.setRemoteTrackEnabled(peer.audioTrack, false);
-    },
-    [hmsActions]
-  );
-
-  const changePeerRole = useCallback(
-    (peer, newRole) => {
-      if (peer.roleName === newRole) return;
-      hmsActions.changeRole(peer.id, newRole, true);
-    },
-    [hmsActions]
-  );
 
   const endDebate = useCallback(async () => {
     try {
@@ -531,9 +357,6 @@ function RoomInner({ token, role, userName }) {
               timers={timers}
               pauseTimes={pauseTimes}
               isPaused={isPaused}
-              isModerator={role === 'moderator'}
-              onMute={mutePeer}
-              onRoleChange={changePeerRole}
             />
           ))}
         {localPeer && (
@@ -545,25 +368,18 @@ function RoomInner({ token, role, userName }) {
             timers={timers}
             pauseTimes={pauseTimes}
             isPaused={isPaused}
-            isModerator={false}
-            onMute={() => {}}
-            onRoleChange={() => {}}
           />
         )}
       </div>
 
+      <MediaControls
+        isConnected={isConnected}
+        localPeer={localPeer}
+        onLeaveRoom={leaveRoom}
+        onToggleAudio={handleAudioToggle}
+      />
       <div className="controls">
-        <button onClick={handleAudioToggle} disabled={!localPeer}>
-          {isLocalAudioEnabled ? 'Mute' : 'Unmute'}
-        </button>
-        <button onClick={toggleVideo} disabled={!localPeer}>
-          {isLocalVideoEnabled ? 'Hide Video' : 'Show Video'}
-        </button>
-        <button onClick={handleScreenShare} disabled={!localPeer}>
-          {amIScreenSharing ? 'Stop Share' : 'Share Screen'}
-        </button>
         <button onClick={() => setIsChatOpen(!isChatOpen)}>Chat</button>
-        <button onClick={leaveRoom}>Leave Room</button>
         {role === 'moderator' && (
           <button onClick={endDebate}>End Debate</button>
         )}
