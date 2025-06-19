@@ -12,9 +12,9 @@ import {
   HMSLogLevel,
 } from '@100mslive/react-sdk';
 import PeerTile from './PeerTile';
-import SpeakerQueue from '../modules/SpeakerQueue';
-import Chat from '../modules/Chat';
-import ScreenShare from '../modules/ScreenShare';
+import SpeakerQueue from './SpeakerQueue';
+import Chat from './Chat';
+import ScreenShare from './ScreenShare';
 import { MediaControls } from './MediaControls';
 import './CustomRoom.css';
 
