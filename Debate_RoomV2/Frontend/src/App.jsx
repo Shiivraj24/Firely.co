@@ -44,38 +44,40 @@ function App() {
           <CustomRoom token={token} role={role} userName={userName} />
         </div>
       ) : (
-        <div style={{ padding: '20px' }}>
-          <h1>Join Debate Room</h1>
-          <div>
-            <label>
-              Enter your name:
-              <input
-                type="text"
-                value={userName}
-                onChange={e => setUserName(e.target.value)}
-                placeholder="Your name"
-                style={{ marginLeft: '10px', padding: '5px' }}
-              />
-            </label>
-            <br />
-            <label style={{ marginTop: '10px', display: 'block' }}>
-              Select your role:
-              <select value={role} onChange={e => setRole(e.target.value)} style={{ marginLeft: '10px', padding: '5px' }}>
-                <option value="judge">Judge</option>
-                <option value="speaker">Speaker</option>
-                <option value="moderator">Moderator</option>
-                <option value="audience">Audience</option>
-              </select>
-            </label>
-            <button 
-              onClick={joinRoom} 
-              disabled={isLoading}
-              style={{ marginTop: '10px', padding: '8px 16px' }}
-            >
+        <div className="join-container">
+          <div className="join-card">
+            <h1>Join Debate Room</h1>
+            <div className="form-group">
+              <label>
+                Your name
+                <input
+                  type="text"
+                  value={userName}
+                  onChange={e => setUserName(e.target.value)}
+                  placeholder="Your name"
+                />
+              </label>
+            </div>
+            <div className="form-group">
+              <label>
+                Select your role
+                <select value={role} onChange={e => setRole(e.target.value)}>
+                  <option value="judge">Judge</option>
+                  <option value="speaker">Speaker</option>
+                  <option value="moderator">Moderator</option>
+                  <option value="audience">Audience</option>
+                </select>
+              </label>
+            </div>
+            <button className="join-button" onClick={joinRoom} disabled={isLoading}>
               {isLoading ? 'Joining...' : 'Join Room'}
             </button>
-            {status && <p style={{ color: 'red' }}>{status}</p>}
-            {roomId && <p>Room ID: {roomId}</p>}
+            {status && <p className="status-message">{status}</p>}
+            {roomId && (
+              <p className="room-info">
+                Room ID: <code>{roomId}</code>
+              </p>
+            )}
           </div>
         </div>
       )}
