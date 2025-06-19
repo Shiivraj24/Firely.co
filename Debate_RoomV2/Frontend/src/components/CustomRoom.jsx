@@ -8,17 +8,13 @@ import {
   selectHMSMessages,
   useAVToggle,
   useCustomEvent,
-  selectRemotePeers,
   HMSLogLevel,
 } from '@100mslive/react-sdk';
 import PeerTile from './PeerTile';
 import SpeakerQueue from '../modules/SpeakerQueue';
 import Chat from '../modules/Chat';
-import ScreenShare from '../modules/ScreenShare';
 import { MediaControls } from './MediaControls';
 import './CustomRoom.css';
-
-const ROLES = ['judge', 'speaker', 'moderator', 'audience'];
 
 
 function RoomInner({ token, role, userName }) {
@@ -26,7 +22,6 @@ function RoomInner({ token, role, userName }) {
   const isConnected = useHMSStore(selectIsConnectedToRoom);
   const peers = useHMSStore(selectPeers);
   const localPeer = useHMSStore(selectLocalPeer);
-  const remotepeer = useHMSStore(selectRemotePeers);
   const messages = useHMSStore(selectHMSMessages);
   const { isLocalAudioEnabled } = useAVToggle();
   const [timers, setTimers] = useState({});
@@ -294,20 +289,6 @@ function RoomInner({ token, role, userName }) {
       setTimers({ [localPeer.id]: start });
     }
   }, [peers, activeSpeaker, localPeer, isConnected, sendEvent]);
-
-  const updateAudioState = useCallback(async () => {
-    if (!isConnected || !localPeer) return;
-    if (localPeer.roleName !== 'speaker') return;
-    
-    const shouldBeEnabled = activeSpeaker === localPeer.id;
-    if (shouldBeEnabled !== isLocalAudioEnabled) {
-      try {
-        await hmsActions.setLocalAudioEnabled(shouldBeEnabled);
-      } catch (error) {
-        console.error('Error updating audio state:', error);
-      }
-    }
-  }, [activeSpeaker, hmsActions, localPeer, isConnected, isLocalAudioEnabled]);
 
   useEffect(() => {
     if (!isConnected || !activeSpeaker || !localPeer) return;
