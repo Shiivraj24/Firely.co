@@ -6,14 +6,15 @@ import {
   selectLocalPeer,
   selectIsConnectedToRoom,
   selectHMSMessages,
-  useVideo,
   useAVToggle,
   useCustomEvent,
   selectRemotePeers,
   HMSLogLevel,
 } from '@100mslive/react-sdk';
 import PeerTile from './PeerTile';
-import SpeakerQueue from './SpeakerQueue';
+import SpeakerQueue from '../modules/SpeakerQueue';
+import Chat from '../modules/Chat';
+import ScreenShare from '../modules/ScreenShare';
 import { MediaControls } from './MediaControls';
 import './CustomRoom.css';
 
@@ -28,7 +29,6 @@ function RoomInner({ token, role, userName }) {
   const remotepeer = useHMSStore(selectRemotePeers);
   const messages = useHMSStore(selectHMSMessages);
   const { isLocalAudioEnabled } = useAVToggle();
-  const [chatInput, setChatInput] = useState('');
   const [timers, setTimers] = useState({});
   const [pauseTimes, setPauseTimes] = useState({});
   const [isPaused, setIsPaused] = useState(false);
@@ -230,7 +230,6 @@ function RoomInner({ token, role, userName }) {
     try {
       joinAttempted.current = false;
       await hmsActions.leave();
-      setChatInput('');
       setTimers({});
       setPauseTimes({});
       setIsPaused(false);
@@ -242,13 +241,11 @@ function RoomInner({ token, role, userName }) {
   }, [hmsActions, isConnected]);
 
   const handleSendMessage = useCallback(
-    e => {
-      e.preventDefault();
-      if (!isConnected || !chatInput.trim()) return;
-      hmsActions.sendBroadcastMessage(chatInput.trim());
-      setChatInput('');
+    message => {
+      if (!isConnected || !message.trim()) return;
+      hmsActions.sendBroadcastMessage(message.trim());
     },
-    [chatInput, hmsActions, isConnected],
+    [hmsActions, isConnected],
   );
 
   const startNextSpeaker = useCallback(() => {
@@ -396,45 +393,13 @@ function RoomInner({ token, role, userName }) {
       />
 
       {isChatOpen && (
-        <div className="chat-container">
-          <div className="chat-header">
-            <span>Chat</span>
-            <button onClick={() => setIsChatOpen(false)}>×</button>
-          </div>
-          <div className="chat-messages">
-            {messages.map((msg, i) => (
-              <div key={i} className="message">
-                <div className="sender">{msg.senderName}</div>
-                <div className="content">{msg.message}</div>
-              </div>
-            ))}
-          </div>
-          <div className="chat-input">
-            <input
-              type="text"
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              placeholder="Type a message..."
-              onKeyPress={e => e.key === 'Enter' && handleSendMessage(e)}
-            />
-            <button onClick={handleSendMessage}>Send</button>
-          </div>
-        </div>
+        <Chat
+          messages={messages}
+          onSend={handleSendMessage}
+          onClose={() => setIsChatOpen(false)}
+        />
       )}
     </div>
-  );
-}
-
-function ScreenShareView({ trackId }) {
-  const { videoRef } = useVideo({ trackId });
-  return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      controls={false}
-      style={{ width: '100%', maxHeight: '70vh' }}
-    />
   );
 }
 
