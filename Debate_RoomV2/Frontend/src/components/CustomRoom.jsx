@@ -93,16 +93,8 @@ const PeerTile = ({ peer, isLocal, userName, activeSpeaker, timers, pauseTimes, 
         <span className="peer-name">{displayName}</span>
         <span className="peer-role">{peer.roleName}</span>
       </div>
-      {isModerator && !isLocal && (
-        <div className="mod-controls">
-          <button onClick={() => onMute(peer)}>Mute</button>
-          <select value={peer.roleName} onChange={e => onRoleChange(peer, e.target.value)}>
-            {ROLES.map(r => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-        </div>
-      )}
+      
+      
       <Timer
         startTime={start}
         isActive={isActiveSpeaker}
