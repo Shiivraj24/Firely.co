@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 import { HMSRoomProvider } from '@100mslive/react-sdk';
 import CustomRoom from './components/CustomRoom';
+import InviteLink from './components/InviteLink';
 
 
 function App() {
@@ -12,6 +13,14 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [userName, setUserName] = useState('');
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const rid = params.get('roomId');
+    const r = params.get('role');
+    if (rid) setRoomId(rid);
+    if (r) setRole(r);
+  }, []);
+
   const joinRoom = async () => {
     if (!userName.trim()) {
       setStatus('Please enter your name');
@@ -20,7 +29,10 @@ function App() {
     setIsLoading(true);
     setStatus('Fetching token...');
     try {
-      const resp = await fetch(`http://localhost:3001/api/get-token?role=${role}&name=${encodeURIComponent(userName.trim())}`);
+      const roomParam = roomId ? `&roomId=${roomId}` : '';
+      const resp = await fetch(
+        `http://localhost:3001/api/get-token?role=${role}${roomParam}&name=${encodeURIComponent(userName.trim())}`
+      );
       const data = await resp.json();
       if (!resp.ok) {
         throw new Error(data.error || 'Failed to fetch token');
@@ -41,6 +53,7 @@ function App() {
     <HMSRoomProvider>
       {token ? (
         <div style={{ height: '100vh' }}>
+          <InviteLink roomId={roomId} />
           <CustomRoom token={token} role={role} userName={userName} />
         </div>
       ) : (

@@ -95,12 +95,18 @@ app.get('/api/get-token', async (req, res) => {
   try {
     const forceNew = req.query.new === 'true';
     const appRole = req.query.role || 'audience';
-    
+    const roomIdParam = req.query.roomId;
+
     if (!ROLE_MAP[appRole]) {
       return res.status(400).json({ error: 'invalid role' });
     }
-    // Reuse the existing room if available unless a new one is requested
-    const room = await getCurrentRoom(forceNew);
+    let room;
+    if (roomIdParam) {
+      room = { id: roomIdParam };
+    } else {
+      // Reuse the existing room if available unless a new one is requested
+      room = await getCurrentRoom(forceNew);
+    }
     console.log(`[ROOM] Using room ${room.id}`);
     const userId = 'user-' + Date.now();
     const token = generateToken(userId, room.id, appRole);
