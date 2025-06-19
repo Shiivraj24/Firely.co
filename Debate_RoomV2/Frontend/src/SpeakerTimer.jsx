@@ -8,6 +8,7 @@ export default function SpeakerTimer() {
   const actions = useHMSActions();
   const [index, setIndex] = useState(0);
   const activeSpeaker = speakers[index];
+  const next = speakers.length > 1 ? speakers[(index + 1) % speakers.length] : null;
   const [timeLeft, setTimeLeft] = useState(DURATION);
 
   useEffect(() => {
@@ -41,9 +42,21 @@ export default function SpeakerTimer() {
   if (!activeSpeaker) return null;
 
   return (
-    <div style={{ position: 'absolute', top: 10, right: 10, background: '#0008', color: '#fff', padding: '10px', borderRadius: '4px' }}>
-      <p>Speaker: {activeSpeaker.name}</p>
-      <p>Time left: {timeLeft}s</p>
+    <div
+      style={{
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        background: '#0008',
+        color: '#fff',
+        padding: '10px',
+        borderRadius: '4px',
+        minWidth: '180px'
+      }}
+    >
+      <p style={{ fontWeight: 'bold', margin: 0 }}>Now: {activeSpeaker.name}</p>
+      {next && <p style={{ margin: '4px 0 0 0' }}>Next: {next.name}</p>}
+      <p style={{ margin: '8px 0 0 0' }}>Time left: {timeLeft}s</p>
       <button onClick={resetTimer}>Reset</button>
       <button onClick={nextSpeaker} style={{ marginLeft: '4px' }}>Next</button>
     </div>
