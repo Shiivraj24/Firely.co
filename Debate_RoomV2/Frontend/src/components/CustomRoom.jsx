@@ -553,19 +553,36 @@ function RoomInner({ token, role, userName }) {
       </div>
 
       <div className="controls">
-        <button onClick={handleAudioToggle} disabled={!localPeer}>
-          {isLocalAudioEnabled ? 'Mute' : 'Unmute'}
+        <button
+          className="control-btn"
+          onClick={handleAudioToggle}
+          disabled={!localPeer}
+        >
+          {isLocalAudioEnabled ? '🔇' : '🎤'}
         </button>
-        <button onClick={toggleVideo} disabled={!localPeer}>
-          {isLocalVideoEnabled ? 'Hide Video' : 'Show Video'}
+        <button
+          className="control-btn"
+          onClick={toggleVideo}
+          disabled={!localPeer}
+        >
+          {isLocalVideoEnabled ? '📷' : '📷'}
         </button>
-        <button onClick={handleScreenShare} disabled={!localPeer}>
-          {amIScreenSharing ? 'Stop Share' : 'Share Screen'}
+        <button
+          className="control-btn"
+          onClick={handleScreenShare}
+          disabled={!localPeer}
+        >
+          {amIScreenSharing ? '🛑' : '🖥️'}
         </button>
-        <button onClick={() => setIsChatOpen(!isChatOpen)}>Chat</button>
-        <button onClick={leaveRoom}>Leave Room</button>
+        <button
+          className="control-btn"
+          onClick={() => setIsChatOpen(!isChatOpen)}
+        >
+          💬
+        </button>
+        <button className="control-btn leave" onClick={leaveRoom}>📞</button>
         {role === 'moderator' && (
-          <button onClick={endDebate}>End Debate</button>
+          <button className="control-btn end" onClick={endDebate}>🛑</button>
         )}
       </div>
 
