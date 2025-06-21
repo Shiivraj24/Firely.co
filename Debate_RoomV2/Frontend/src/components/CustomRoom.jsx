@@ -45,6 +45,13 @@ function RoomInner({ token, role, userName }) {
 
   // Memoize the onEvent callback to prevent infinite re-renders
   const handleCustomEvent = useCallback((data) => {
+    if (!data.peerId) {
+      setActiveSpeaker(null);
+      setTimers({});
+      setPauseTimes({});
+      setIsPaused(false);
+      return;
+    }
     setActiveSpeaker(data.peerId);
     setTimers({ [data.peerId]: data.start });
     // Reset pause state when a new speaker starts
@@ -250,11 +257,12 @@ function RoomInner({ token, role, userName }) {
       sendEvent({ peerId, start });
       setActiveSpeaker(peerId);
       setTimers({ [peerId]: start });
-      // Reset pause state for new speaker
-      setPauseTimes({});
-      setIsPaused(false);
+      // Start in paused state until user unmutes
+      setPauseTimes({ [peerId]: start });
+      setIsPaused(true);
+      sendPauseEvent({ action: 'pause', peerId, pauseTime: start });
     },
-    [sendEvent, isConnected, activeSpeaker]
+    [sendEvent, sendPauseEvent, isConnected, activeSpeaker]
   );
 
   const startFromModerator = useCallback(
@@ -309,6 +317,19 @@ function RoomInner({ token, role, userName }) {
   // Use a ref to track if we've already started a speaker to prevent infinite loops
   const hasStartedSpeaker = useRef(false);
 
+  // Stop all timers when the queue is empty
+  useEffect(() => {
+    if (speakerQueue.length === 0) {
+      setActiveSpeaker(null);
+      setTimers({});
+      setPauseTimes({});
+      setIsPaused(false);
+      if (role === 'moderator') {
+        sendEvent({ peerId: null });
+      }
+    }
+  }, [speakerQueue, role, sendEvent]);
+
   // Keep the queue in sync when speakers leave
   useEffect(() => {
     if (!isConnected) return;
@@ -344,8 +365,8 @@ function RoomInner({ token, role, userName }) {
   const updateAudioState = useCallback(async () => {
     if (!isConnected || !localPeer) return;
     if (localPeer.roleName !== 'speaker') return;
-    
-    const shouldBeEnabled = activeSpeaker === localPeer.id;
+
+    const shouldBeEnabled = activeSpeaker === localPeer.id && !isPaused;
     if (shouldBeEnabled !== isLocalAudioEnabled) {
       try {
         await hmsActions.setLocalAudioEnabled(shouldBeEnabled);
@@ -353,7 +374,11 @@ function RoomInner({ token, role, userName }) {
         console.error('Error updating audio state:', error);
       }
     }
-  }, [activeSpeaker, hmsActions, localPeer, isConnected, isLocalAudioEnabled]);
+  }, [activeSpeaker, hmsActions, localPeer, isConnected, isLocalAudioEnabled, isPaused]);
+
+  useEffect(() => {
+    updateAudioState();
+  }, [updateAudioState]);
 
   useEffect(() => {
     if (!isConnected || !activeSpeaker || !localPeer) return;
