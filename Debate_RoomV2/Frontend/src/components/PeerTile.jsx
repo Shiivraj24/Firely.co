@@ -1,6 +1,6 @@
 import React from 'react';
 import { useVideo } from '@100mslive/react-sdk';
-import Timer from './Timer';
+import Timer from '../Timer';
 
 export default function PeerTile({
   peer,

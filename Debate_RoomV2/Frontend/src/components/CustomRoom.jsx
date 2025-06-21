@@ -18,7 +18,7 @@ import ScreenShare from './ScreenShare';
 import { MediaControls } from './MediaControls';
 import './CustomRoom.css';
 
-const ROLES = ['judge', 'speaker', 'moderator', 'audience'];
+//const ROLES = ['judge', 'speaker', 'moderator', 'audience'];
 
 
 function RoomInner({ token, role, userName }) {
@@ -26,7 +26,7 @@ function RoomInner({ token, role, userName }) {
   const isConnected = useHMSStore(selectIsConnectedToRoom);
   const peers = useHMSStore(selectPeers);
   const localPeer = useHMSStore(selectLocalPeer);
-  const remotepeer = useHMSStore(selectRemotePeers);
+  //const remotepeer = useHMSStore(selectRemotePeers);
   const messages = useHMSStore(selectHMSMessages);
   const { isLocalAudioEnabled } = useAVToggle();
   const [timers, setTimers] = useState({});

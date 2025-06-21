@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-
 import { HMSRoomProvider } from '@100mslive/react-sdk';
 import CustomRoom from './components/CustomRoom';
 import InviteLink from './components/InviteLink';
