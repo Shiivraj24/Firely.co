@@ -66,6 +66,32 @@ function RoomInner({ token, role, userName }) {
     onEvent: handleQueueEvent,
   });
 
+  const handlePauseEvent = useCallback((data) => {
+    if (data.action === 'pause') {
+      setPauseTimes(prev => ({
+        ...prev,
+        [data.peerId]: data.pauseTime,
+      }));
+      setIsPaused(true);
+    } else if (data.action === 'resume') {
+      setTimers(prev => ({
+        ...prev,
+        [data.peerId]: data.newStart,
+      }));
+      setPauseTimes(prev => {
+        const newTimes = { ...prev };
+        delete newTimes[data.peerId];
+        return newTimes;
+      });
+      setIsPaused(false);
+    }
+  }, []);
+
+  const { sendEvent: sendPauseEvent } = useCustomEvent({
+    type: 'PAUSE_TIMER',
+    onEvent: handlePauseEvent,
+  });
+
   useEffect(() => {
     let mounted = true;
 
@@ -104,16 +130,22 @@ function RoomInner({ token, role, userName }) {
     if (!isConnected) return;
     try {
       await hmsActions.setLocalAudioEnabled(!isLocalAudioEnabled);
-      
+
       // Handle timer pause/resume for active speaker
       if (activeSpeaker === localPeer?.id) {
         if (isLocalAudioEnabled) {
           // Speaker is about to be muted - pause the timer
+          const pauseAt = Date.now();
           setPauseTimes(prev => ({
             ...prev,
-            [activeSpeaker]: Date.now()
+            [activeSpeaker]: pauseAt,
           }));
           setIsPaused(true);
+          sendPauseEvent({
+            action: 'pause',
+            peerId: activeSpeaker,
+            pauseTime: pauseAt,
+          });
         } else {
           // Speaker is about to be unmuted - resume the timer
           const pauseTime = pauseTimes[activeSpeaker];
@@ -122,14 +154,19 @@ function RoomInner({ token, role, userName }) {
             const pausedDuration = Date.now() - pauseTime;
             const originalStart = timers[activeSpeaker];
             const adjustedStart = originalStart + pausedDuration;
-            
+
             // Update the timer with the adjusted start time
             setTimers(prev => ({
               ...prev,
               [activeSpeaker]: adjustedStart
             }));
+            sendPauseEvent({
+              action: 'resume',
+              peerId: activeSpeaker,
+              newStart: adjustedStart,
+            });
           }
-          
+
           // Clear the pause time
           setPauseTimes(prev => {
             const newPauseTimes = { ...prev };
@@ -142,7 +179,16 @@ function RoomInner({ token, role, userName }) {
     } catch (error) {
       console.error('Error toggling audio:', error);
     }
-  }, [hmsActions, isLocalAudioEnabled, isConnected, activeSpeaker, localPeer, pauseTimes, timers]);
+  }, [
+    hmsActions,
+    isLocalAudioEnabled,
+    isConnected,
+    activeSpeaker,
+    localPeer,
+    pauseTimes,
+    timers,
+    sendPauseEvent,
+  ]);
 
 
 
